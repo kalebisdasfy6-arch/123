@@ -905,90 +905,10 @@ local function getGunMuzzlePosition()
     return nil
 end
 
-local function getEquippedGunSetting()
-    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-    if tool and tool:FindFirstChild("Setting") then
-        local ok, settings = pcall(require, tool.Setting)
-        if ok and type(settings) == "table" then return tool, settings end
-    end
-    return nil, nil
-end
-
-local function applyAllWeaponMods()
-    local tool, settings = getEquippedGunSetting()
-    if not settings then return end
-    pcall(function()
-        if WeaponMods.InfiniteAmmo then
-            settings.Ammo = 99999; settings.AmmoPerMag = 99999; settings.LimitedAmmoEnabled = false
-        end
-        if WeaponMods.InfiniteClips then
-            settings.Ammo = 80000; settings.AmmoPerMag = 80000; settings.LimitedAmmoEnabled = false
-        end
-        if WeaponMods.Bullets80k then
-            settings.Ammo = 80000; settings.AmmoPerMag = 80000; settings.LimitedAmmoEnabled = false
-            local gunLocal = tool:FindFirstChild("GunScript_Local")
-            if gunLocal and type(getsenv) == "function" then
-                pcall(function()
-                    local env = getsenv(gunLocal)
-                    if env and type(env.Reload) == "function" and type(debug.setupvalue) == "function" then
-                        debug.setupvalue(env.Reload, 1, 80000)
-                        debug.setupvalue(env.Reload, 3, 80000)
-                    end
-                end)
-            end
-        end
-        if WeaponMods.ModifyRecoilValue then settings.Recoil = 0; settings.CameraRecoilingEnabled = false end
-        if WeaponMods.ModifySpreadValue then settings.Spread = 0; settings.SpreadX = 0; settings.SpreadY = 0; settings.Accuracy = 1 end
-        if WeaponMods.DisableJamming then settings.JamChance = 0 end
-        if WeaponMods.InstantReload then settings.ReloadTime = WeaponMods.ReloadSpeed or 0.1 end
-        if WeaponMods.InstantEquip then settings.EquipTime = WeaponMods.EquipSpeed or 0.1; settings.EquippingTime = WeaponMods.EquipSpeed or 0.1 end
-        if WeaponMods.ModifyFireRate then settings.FireRate = 0 end
-        if WeaponMods.Automatic then settings.Auto = true end
-        if WeaponMods.DamageAmplified then settings.BaseDamage = 10000 end
-        if WeaponMods.SpoofAccuracy then settings.Accuracy = 1 end
-    end)
-end
-
-local function getNearestPlayer(maxDistance)
-    local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not localRoot then return nil end
-    local nearest, nearestDistance = nil, maxDistance or math.huge
-    for _, player in ipairs(Players:GetPlayers()) do
-        if isValidCombatPlayer(player) then
-            
-            local distance = (player.Character.HumanoidRootPart.Position - localRoot.Position).Magnitude
-            if distance <= nearestDistance then
-                nearestDistance = distance
-                nearest = player
-            end
-        end
-    end
-    return nearest, nearestDistance
-end
-
-local function applyHitboxExpander()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer or not player.Character then continue end
-        local partName = "Head"
-        local part = player.Character:FindFirstChild(partName)
-        if part and part:IsA("BasePart") then
-            if WeaponMods.HitboxExpander then
-                local size = WeaponMods.HitboxSize * 2
-                part.Size = Vector3.new(size, size, size)
-                part.Transparency = WeaponMods.HitboxVisible and 0.5 or 1
-                part.CanCollide = false
-                part.Massless = true
-            else
-                part.Size = partName == "Head" and Vector3.new(2, 1, 1) or Vector3.new(2, 2, 1)
-                part.Transparency = 1
-            end
-        end
-    end
-end
 
 task.spawn(function()
     while task.wait(0.25) do
-        applyAllWeaponMods()
+
         if WeaponMods.HitboxExpander then applyHitboxExpander() end
     end
 end)
@@ -1157,11 +1077,11 @@ end)
 
 LocalPlayer.CharacterAdded:Connect(function(character)
     character.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then task.defer(applyAllWeaponMods) end
+
     end)
 end)
 LocalPlayer.Backpack.ChildAdded:Connect(function(child)
-    if child:IsA("Tool") then task.defer(applyAllWeaponMods) end
+
 end)
 
 
@@ -2840,36 +2760,6 @@ VehicleSection = PlayerTab:Section({Name = "Vehicle Settings", Side = 2})
         sendNotification("Bring Car", "Car brought successfully!")
     end})
 
-GunModsSection = PlayerTab:Section({Name = "Gun Modifications", Side = 1})
-    local function bindWeaponToggle(name, key, flag)
-        GunModsSection:Toggle({Name = name, Flag = flag, Default = false, Callback = function(state) WeaponMods[key] = state; applyAllWeaponMods() end})
-    end
-    bindWeaponToggle("Infinite Ammo", "InfiniteAmmo", "WM_InfiniteAmmo")
-    bindWeaponToggle("Infinite Mag", "InfiniteClips", "WM_InfiniteClips")
-    bindWeaponToggle("80k Bullets", "Bullets80k", "WM_Bullets80k")
-    bindWeaponToggle("No Recoil", "ModifyRecoilValue", "WM_NoRecoil")
-    bindWeaponToggle("No Spread", "ModifySpreadValue", "WM_NoSpread")
-    bindWeaponToggle("No Jam", "DisableJamming", "WM_NoJam")
-    bindWeaponToggle("Instant Reload", "InstantReload", "WM_InstantReload")
-    bindWeaponToggle("Instant Equip", "InstantEquip", "WM_InstantEquip")
-    bindWeaponToggle("Full Auto", "Automatic", "WM_FullAuto")
-    bindWeaponToggle("Fast Fire Rate", "ModifyFireRate", "WM_FastFireRate")
-    bindWeaponToggle("One Tap Damage", "DamageAmplified", "WM_OneTapDamage")
-    bindWeaponToggle("Spoof Accuracy", "SpoofAccuracy", "WM_SpoofAccuracy")
-    bindWeaponToggle("Bullet Hitbox Expander", "HitboxExpander", "WM_HitboxExpander")
-    bindWeaponToggle("Bullet Hitbox Visible", "HitboxVisible", "WM_HitboxVisible")
-    bindWeaponToggle("Bullet Hitmarkers", "Hitmarkers", "WM_Hitmarkers")
-    GunModsSection:Slider({Name = "Reload Speed", Flag = "WM_ReloadSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value) WeaponMods.ReloadSpeed = value; applyAllWeaponMods() end})
-    GunModsSection:Slider({Name = "Equip Speed", Flag = "WM_EquipSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value) WeaponMods.EquipSpeed = value; applyAllWeaponMods() end})
-    GunModsSection:Slider({Name = "Bullet Hitbox Size", Flag = "WM_HitboxSize", Min = 1, Max = 10, Default = 1, Callback = function(value) WeaponMods.HitboxSize = value end})
-    GunModsSection:Toggle({Name = "Enable Gun Color", Flag = "WM_GunColor", Default = false, Callback = function(state)
-        GunChams = state
-        if not state then
-            for part, color in pairs(GunOriginalColors) do if part and part.Parent then part.Color = color; part.Material = Enum.Material.Plastic end end
-            GunOriginalColors = {}
-        end
-    end})
-    GunModsSection:Toggle({Name = "Rainbow Gun Color", Flag = "WM_GunRainbow", Default = false, Callback = function(state) RainbowGun = state end})
 end
 
 -- ============================================================================
