@@ -11,9 +11,9 @@ end
 
 -- Create the window using RichText tags to color specific words in the title
 local Window = Library:Window({
-    Name = 'miani football  |  [v2.6]  |  License: <font color="#FFAA00">Lifetime</font>  |  <font color="#55FF00">Premium User</font>',
+    Name = "miani football  |  [v2.6]  |  License: <font color=\"#FFAA00\">Lifetime</font>  |  <font color=\"#55FF00\">Premium User</font>",
     
-    FadeSpeed = 0.0
+    FadeSpeed = 0.2
 })
 
 local Watermark = Library:Watermark("miani football")
@@ -116,6 +116,53 @@ local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
 -- Flag helper (Thugsense stores its own flags, but we mirror state here)
+local Tracers = { Enabled = false, Duration = 3, StartColor = Color3.fromRGB(255, 85, 0), EndColor = Color3.fromRGB(0, 0, 0), Rainbow = false }
+local Tracer_Delay = false
+local function DrawBulletTracer(EndPos)
+    if Tracer_Delay then return end
+    Tracer_Delay = true
+    pcall(function()
+        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if not tool or not tool:FindFirstChild("Handle") then return end
+        
+        local muzzle = tool.Handle:FindFirstChild("GunMuzzlePoint") or tool.Handle:FindFirstChild("GunFirePoint") or tool.Handle
+        local startPos = muzzle:IsA("Attachment") and muzzle.WorldCFrame.Position or muzzle.Position
+        
+        local StartPart = Instance.new("Part")
+        StartPart.Anchored = true; StartPart.Transparency = 1; StartPart.Position = startPos
+        StartPart.Parent = workspace; StartPart.CanCollide = false; StartPart.CanQuery = false; StartPart.CanTouch = false
+
+        local EndPart = Instance.new("Part")
+        EndPart.Anchored = true; EndPart.CanCollide = false; EndPart.Transparency = 1
+        EndPart.Position = EndPos; EndPart.Parent = workspace; EndPart.CanQuery = false; EndPart.CanTouch = false
+
+        local Attachment1 = Instance.new("Attachment", StartPart)
+        local Attachment2 = Instance.new("Attachment", EndPart)
+        local Beam = Instance.new("Beam", StartPart)
+        Beam.Attachment0 = Attachment1; Beam.Attachment1 = Attachment2
+        Beam.FaceCamera = true; Beam.LightEmission = 1; Beam.LightInfluence = 0
+        Beam.Width0 = 0.05; Beam.Width1 = 0.05
+
+        if Tracers.Rainbow then
+            task.spawn(function()
+                while Beam and Beam.Parent do
+                    local Hue = tick() % 5 / 5
+                    local NextHue = (Hue + 0.1) % 1
+                    Beam.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromHSV(Hue, 1, 1)), ColorSequenceKeypoint.new(1, Color3.fromHSV(NextHue, 1, 1)) })
+                    task.wait(0.05)
+                end
+            end)
+        else
+            Beam.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Tracers.StartColor), ColorSequenceKeypoint.new(1, Tracers.EndColor) })
+        end
+
+        task.delay(Tracers.Duration, function()
+            StartPart:Destroy()
+            EndPart:Destroy()
+        end)
+    end)
+    task.spawn(function() task.wait(0.05); Tracer_Delay = false end)
+end
 
 local flags = {}
 local function setFlag(name, value)
@@ -250,13 +297,13 @@ local function GetNearestCar(hrp)
     local nearestCar = nil
     local nearestDist = math.huge
     for _, car in ipairs(CivCars:GetChildren()) do
-        if not car:IsA("Model") then break end
+        if not car:IsA("Model") then continue end
         local seat = car:FindFirstChild("DriveSeat") or car:FindFirstChildWhichIsA("VehicleSeat")
-        if not seat or seat.Occupant then break end
+        if not seat or seat.Occupant then continue end
         if not car.PrimaryPart then
             car.PrimaryPart = car:FindFirstChildWhichIsA("BasePart")
         end
-        if not car.PrimaryPart then break end
+        if not car.PrimaryPart then continue end
         local dist = (car.PrimaryPart.Position - hrp.Position).Magnitude
         if dist < nearestDist then
             nearestDist = dist
@@ -483,8 +530,8 @@ end
 task.spawn(function()
     while true do
         task.wait(0.1)
-        if not AutoDupeCurrentItem then break end
-        if not DupeToolName or DupeToolName == "nil" then break end
+        if not AutoDupeCurrentItem then continue end
+        if not DupeToolName or DupeToolName == "nil" then continue end
         if not DupeCooldown then duplicateCurrentItem() end
     end
 end)
@@ -921,7 +968,7 @@ end
 
 local function applyHitboxExpander()
     for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer or not player.Character then break end
+        if player == LocalPlayer or not player.Character then continue end
         local partName = "Head"
         local part = player.Character:FindFirstChild(partName)
         if part and part:IsA("BasePart") then
@@ -1033,12 +1080,12 @@ end)
 
 task.spawn(function()
     while task.wait() do
-        if not PlayerUtilities.BugPlayer then break end
+        if not PlayerUtilities.BugPlayer then continue end
         local target = getSelectedPlayer(flags["MainSelectPlayer"])
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
-        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then continue end
         local car = getAvailableVehicle()
-        if not car or not car:FindFirstChild("DriveSeat") or car.DriveSeat.Occupant then break end
+        if not car or not car:FindFirstChild("DriveSeat") or car.DriveSeat.Occupant then continue end
         if not car:GetAttribute("Usable") or car:GetAttribute("Usable") == false then
             car.DriveSeat:Sit(LocalPlayer.Character.Humanoid)
             car:SetAttribute("Usable", true)
@@ -1057,49 +1104,49 @@ end)
 
 task.spawn(function()
     while task.wait(1) do
-        if not PlayerUtilities.AutoKill then break end
+        if not PlayerUtilities.AutoKill then continue end
         local target = getSelectedPlayer(flags["MainSelectPlayer"])
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
-        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then continue end
         local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
-        if not tool or not tool:FindFirstChild("GunScript_Local") then break end
-        if target.Character.Humanoid.Health == 0 or target.Character:FindFirstChildOfClass("ForceField") then break end
+        if not tool or not tool:FindFirstChild("GunScript_Local") then continue end
+        if target.Character.Humanoid.Health == 0 or target.Character:FindFirstChildOfClass("ForceField") then continue end
         killGun(target.Name, "Head", math.huge)
     end
 end)
 
 task.spawn(function()
     while task.wait(2) do
-        if not PlayerUtilities.AutoRagdoll then break end
+        if not PlayerUtilities.AutoRagdoll then continue end
         local target = getSelectedPlayer(flags["MainSelectPlayer"])
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
-        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then continue end
         local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
-        if not tool or not tool:FindFirstChild("GunScript_Local") then break end
-        if target.Character.Humanoid.Health == 0 then break end
-        if target.Character.Humanoid:GetState() == Enum.HumanoidStateType.Physics then break end
+        if not tool or not tool:FindFirstChild("GunScript_Local") then continue end
+        if target.Character.Humanoid.Health == 0 then continue end
+        if target.Character.Humanoid:GetState() == Enum.HumanoidStateType.Physics then continue end
         killGun(target.Name, "RightUpperLeg", 0.01)
     end
 end)
 
 task.spawn(function()
     while task.wait() do
-        if not PlayerUtilities.BringingNearestPlayer then break end
+        if not PlayerUtilities.BringingNearestPlayer then continue end
         local target = getNearestPlayer()
-        if not target or target == LocalPlayer then break end
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
-        if not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
+        if not target or target == LocalPlayer then continue end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then continue end
         target.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(2, 0, 0)
     end
 end)
 
 task.spawn(function()
     while task.wait() do
-        if not PlayerUtilities.BringingPlayer then break end
+        if not PlayerUtilities.BringingPlayer then continue end
         local target = getSelectedPlayer(flags["MainSelectPlayer"])
-        if not target or target == LocalPlayer then break end
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
-        if not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
+        if not target or target == LocalPlayer then continue end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then continue end
         target.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(2, 0, 0)
     end
 end)
@@ -1223,8 +1270,8 @@ task.spawn(function()
             local storage = workspace:FindFirstChild("Storage")
             if storage then
                 for _, Value in next, storage:GetChildren() do
-                    if not Value:IsA("MeshPart") then break end
-                    if Value:FindFirstChild("PlayerName") and Value.PlayerName.Value == LocalPlayer.Name then break end
+                    if not Value:IsA("MeshPart") then continue end
+                    if Value:FindFirstChild("PlayerName") and Value.PlayerName.Value == LocalPlayer.Name then continue end
                     if (Value.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude < 5 then
                         local prompt = Value:FindFirstChild("stealprompt")
                         if prompt and prompt:IsA("ProximityPrompt") then fireproximityprompt(prompt) end
@@ -1246,7 +1293,7 @@ ProximityPromptService.PromptButtonHoldBegan:Connect(function(Prompt, Self)
                 else
                     checkPrompt = checkPrompt.Parent
                 end
-                break
+                continue
             end
             checkPrompt = checkPrompt.Parent
         end
@@ -1267,18 +1314,18 @@ local AutoStealLootbagsLoop = task.spawn(function()
     while task.wait(1) do
         if AutoStealLootbags then
             local storage = workspace:FindFirstChild("Storage")
-            if not storage then break end
+            if not storage then continue end
             for _, item in ipairs(storage:GetChildren()) do
                 if not AutoStealLootbags then break end
                 local prompt = item:FindFirstChild("stealprompt", true)
                 if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
                     local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                     local root = character:FindFirstChild("HumanoidRootPart")
-                    if not root then break end
+                    if not root then continue end
                     local oldCFrame = root.CFrame
                     getgenv().SwimMethod = true; task.wait(0.3)
                     local targetPart = prompt.Parent:IsA("BasePart") and prompt.Parent or item:FindFirstChildWhichIsA("BasePart", true)
-                    if not targetPart then break end
+                    if not targetPart then continue end
                     root.CFrame = targetPart.CFrame + Vector3.new(0, 2, 0); task.wait(0.3)
                     fireproximityprompt(prompt); task.wait(0.3)
                     root.CFrame = oldCFrame; task.wait(0.5)
@@ -1302,7 +1349,7 @@ end)
 -- Auto F on low health
 task.spawn(function()
     while task.wait(0.1) do
-        if not AutoFOnLowHealth then break end
+        if not AutoFOnLowHealth then continue end
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         if humanoid and humanoid.Health > 0 and humanoid.Health < 10 then
@@ -1439,6 +1486,255 @@ end
 if LocalPlayer.Character then flyOnCharacterAdded(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(flyOnCharacterAdded)
 
+-- ========== ESP ENGINES ==========
+local Drawings = { ESP = {}, Tracers = {}, Boxes = {}, Healthbars = {}, Names = {}, Distances = {}, Snaplines = {}, Skeleton = {} }
+local Highlights = {}
+local BillboardESPObjects = {}
+local UI_THEME = { Accent = Color3.fromRGB(252, 149, 175), Text = Color3.fromRGB(240, 240, 240), TextDark = Color3.fromRGB(150, 150, 150), Success = Color3.fromRGB(0, 220, 100), Fail = Color3.fromRGB(220, 50, 50) }
+_G.FriendColor = Color3.fromRGB(0, 0, 255)
+_G.EnemyColor = Color3.fromRGB(255, 0, 0)
+_G.UseTeamColor = true
+
+local function CreateDrawingESP(player)
+    if player == LocalPlayer then return end
+    if not Drawing or type(Drawing.new) ~= "function" then return end
+    local ok = pcall(function()
+        local box = { TopLeft = Drawing.new("Line"), TopRight = Drawing.new("Line"), BottomLeft = Drawing.new("Line"), BottomRight = Drawing.new("Line"), Left = Drawing.new("Line"), Right = Drawing.new("Line"), Top = Drawing.new("Line"), Bottom = Drawing.new("Line") }
+        for _, line in pairs(box) do line.Visible = false; line.Color = _G.EnemyColor; line.Thickness = 1 end
+        local tracer = Drawing.new("Line"); tracer.Visible = false; tracer.Color = _G.EnemyColor; tracer.Thickness = 1
+        local healthBar = { Outline = Drawing.new("Square"), Fill = Drawing.new("Square") }
+        healthBar.Outline.Visible = false; healthBar.Outline.Color = Color3.fromRGB(0,0,0); healthBar.Outline.Filled = false
+        healthBar.Fill.Visible = false; healthBar.Fill.Filled = true
+        local info = { Name = Drawing.new("Text"), Distance = Drawing.new("Text") }
+        for _, text in pairs(info) do text.Visible = false; text.Center = true; text.Size = 14; text.Color = Color3.fromRGB(255, 255, 255); text.Outline = true end
+        local snapline = Drawing.new("Line"); snapline.Visible = false; snapline.Color = _G.EnemyColor; snapline.Thickness = 1
+        local lookTracer = Drawing.new("Line"); lookTracer.Visible = false; lookTracer.Color = _G.EnemyColor; lookTracer.Thickness = 1
+        local skeletonLines = {}
+        for i=1, 15 do local sl = Drawing.new("Line"); sl.Visible = false; sl.Color = Color3.fromRGB(255, 255, 255); sl.Thickness = 1; table.insert(skeletonLines, sl) end
+        Drawings.ESP[player] = { Box = box, Tracer = tracer, HealthBar = healthBar, Info = info, Snapline = snapline, LookTracer = lookTracer, Skeleton = skeletonLines }
+    end)
+    if not ok then Drawings.ESP[player] = nil end
+end
+
+local function RemoveBillboardESP(player)
+    local data = BillboardESPObjects[player]
+    if data then if data.Nametag then data.Nametag:Destroy() end; BillboardESPObjects[player] = nil end
+end
+
+local function CreateBillboardESP(player)
+    RemoveBillboardESP(player)
+    if player == LocalPlayer then return end
+    local Nametag = Instance.new("BillboardGui")
+    Nametag.Name = "Sp3arESP_" .. player.Name
+    Nametag.AlwaysOnTop = true
+    Nametag.Size = UDim2.new(0, 240, 0, 70)
+    Nametag.StudsOffset = Vector3.new(0, 3.2, 0)
+    Nametag.Enabled = false
+    Nametag.Parent = CoreGui
+    local Layout = Instance.new("UIListLayout")
+    Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    Layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+    Layout.SortOrder = Enum.SortOrder.LayoutOrder
+    Layout.Padding = UDim.new(0, 1)
+    Layout.Parent = Nametag
+    local MainLabel = Instance.new("TextLabel")
+    MainLabel.Name = "MainLabel"; MainLabel.Size = UDim2.new(1, 0, 0, 14); MainLabel.BackgroundTransparency = 1
+    MainLabel.Text = player.DisplayName or player.Name; MainLabel.TextColor3 = UI_THEME.Text
+    MainLabel.FontFace = Font.fromName("Montserrat", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+    MainLabel.TextSize = 12; MainLabel.TextStrokeTransparency = 0.2; MainLabel.LayoutOrder = 2; MainLabel.Parent = Nametag
+    local HealthBarFrame = Instance.new("Frame")
+    HealthBarFrame.Name = "HealthBarFrame"; HealthBarFrame.Size = UDim2.new(0, 55, 0, 4); HealthBarFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    HealthBarFrame.BorderSizePixel = 0; HealthBarFrame.LayoutOrder = 3; HealthBarFrame.Parent = Nametag
+    local hbCorner = Instance.new("UICorner"); hbCorner.CornerRadius = UDim.new(1,0); hbCorner.Parent = HealthBarFrame
+    local hbStroke = Instance.new("UIStroke"); hbStroke.Color = Color3.fromRGB(0,0,0); hbStroke.Thickness = 1; hbStroke.Parent = HealthBarFrame
+    local HealthBarFill = Instance.new("Frame")
+    HealthBarFill.Name = "Fill"; HealthBarFill.Size = UDim2.fromScale(1, 1); HealthBarFill.BackgroundColor3 = UI_THEME.Success
+    HealthBarFill.BorderSizePixel = 0; HealthBarFill.Parent = HealthBarFrame
+    local hbfCorner = Instance.new("UICorner"); hbfCorner.CornerRadius = UDim.new(1,0); hbfCorner.Parent = HealthBarFill
+    local SubLabel = Instance.new("TextLabel")
+    SubLabel.Name = "SubLabel"; SubLabel.Size = UDim2.new(1, 0, 0, 11); SubLabel.BackgroundTransparency = 1
+    SubLabel.Text = "0m"; SubLabel.TextColor3 = UI_THEME.TextDark
+    SubLabel.FontFace = Font.fromName("Montserrat", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
+    SubLabel.TextSize = 10; SubLabel.TextStrokeTransparency = 0.3; SubLabel.LayoutOrder = 4; SubLabel.Parent = Nametag
+    local EquipLabel = Instance.new("TextLabel")
+    EquipLabel.Name = "EquipLabel"; EquipLabel.Size = UDim2.new(1, 0, 0, 11); EquipLabel.BackgroundTransparency = 1
+    EquipLabel.Text = ""; EquipLabel.TextColor3 = Color3.fromRGB(200, 180, 240)
+    EquipLabel.FontFace = Font.fromName("Montserrat", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
+    EquipLabel.TextSize = 9; EquipLabel.TextStrokeTransparency = 0.3; EquipLabel.LayoutOrder = 5; EquipLabel.Parent = Nametag
+    BillboardESPObjects[player] = { Nametag = Nametag, MainLabel = MainLabel, HealthBarFrame = HealthBarFrame, HealthBarFill = HealthBarFill, SubLabel = SubLabel, EquipLabel = EquipLabel }
+end
+
+local function RemoveAllPlayerESP(player)
+    local espObj = Drawings.ESP[player]
+    if espObj then
+        for _, obj in pairs(espObj.Box) do obj:Remove() end
+        espObj.Tracer:Remove()
+        espObj.HealthBar.Outline:Remove(); espObj.HealthBar.Fill:Remove()
+        for _, obj in pairs(espObj.Info) do obj:Remove() end
+        espObj.Snapline:Remove()
+        Drawings.ESP[player] = nil
+    end
+    if player.Character and player.Character:FindFirstChild("GetReal") then player.Character:FindFirstChild("GetReal"):Destroy() end
+    Highlights[player] = nil
+    RemoveBillboardESP(player)
+end
+
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then CreateDrawingESP(player); CreateBillboardESP(player) end
+end
+Players.PlayerAdded:Connect(function(player) CreateDrawingESP(player); CreateBillboardESP(player) end)
+Players.PlayerRemoving:Connect(RemoveAllPlayerESP)
+
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            local character = player.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local playerColor = _G.EnemyColor
+            if _G.UseTeamColor and player.Team == LocalPlayer.Team then playerColor = _G.FriendColor end
+
+            -- ESP 1: Highlight chams
+            if ESPFlags.Chams and ESPFlags.Enabled and character and humanoid and humanoid.Health > 0 then
+                local highlight = character:FindFirstChild("GetReal")
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Name = "GetReal"; highlight.Adornee = character; highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    highlight.Parent = character; Highlights[player] = true
+                end
+                highlight.Enabled = true; highlight.FillColor = playerColor
+            else
+                if character and character:FindFirstChild("GetReal") then character:FindFirstChild("GetReal").Enabled = false end
+            end
+
+            -- ESP 2: Drawing
+            local espObj = Drawings.ESP[player]
+            if not espObj then pcall(function() CreateDrawingESP(player) end); espObj = Drawings.ESP[player] end
+            if espObj then
+            if ESPFlags.Enabled and character and rootPart and humanoid and humanoid.Health > 0 then
+                local pos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+                if onScreen then
+                    local size = character:GetExtentsSize()
+                    local cf = rootPart.CFrame
+                    local top = Camera:WorldToViewportPoint((cf * CFrame.new(0, size.Y/2, 0)).Position)
+                    local bottom = Camera:WorldToViewportPoint((cf * CFrame.new(0, -size.Y/2, 0)).Position)
+                    local screenSize = bottom.Y - top.Y
+                    local boxWidth = screenSize * 0.6
+                    local boxPosition = Vector2.new(top.X - boxWidth/2, top.Y)
+                    local boxSize = Vector2.new(boxWidth, screenSize)
+                    local cornerSize = boxWidth * 0.25
+                    if ESPFlags.Box then
+                        for _, obj in pairs(espObj.Box) do obj.Visible = false end
+                        espObj.Box.TopLeft.From = boxPosition; espObj.Box.TopLeft.To = boxPosition + Vector2.new(cornerSize, 0); espObj.Box.TopLeft.Color = playerColor; espObj.Box.TopLeft.Visible = true
+                        espObj.Box.TopRight.From = boxPosition + Vector2.new(boxSize.X, 0); espObj.Box.TopRight.To = boxPosition + Vector2.new(boxSize.X - cornerSize, 0); espObj.Box.TopRight.Color = playerColor; espObj.Box.TopRight.Visible = true
+                        espObj.Box.BottomLeft.From = boxPosition + Vector2.new(0, boxSize.Y); espObj.Box.BottomLeft.To = boxPosition + Vector2.new(cornerSize, boxSize.Y); espObj.Box.BottomLeft.Color = playerColor; espObj.Box.BottomLeft.Visible = true
+                        espObj.Box.BottomRight.From = boxPosition + boxSize; espObj.Box.BottomRight.To = boxPosition + boxSize - Vector2.new(cornerSize, 0); espObj.Box.BottomRight.Color = playerColor; espObj.Box.BottomRight.Visible = true
+                        espObj.Box.Left.From = boxPosition; espObj.Box.Left.To = boxPosition + Vector2.new(0, cornerSize); espObj.Box.Left.Color = playerColor; espObj.Box.Left.Visible = true
+                        espObj.Box.Right.From = boxPosition + Vector2.new(boxSize.X, 0); espObj.Box.Right.To = boxPosition + Vector2.new(boxSize.X, cornerSize); espObj.Box.Right.Color = playerColor; espObj.Box.Right.Visible = true
+                        espObj.Box.Top.From = boxPosition + Vector2.new(0, boxSize.Y); espObj.Box.Top.To = boxPosition + Vector2.new(0, boxSize.Y - cornerSize); espObj.Box.Top.Color = playerColor; espObj.Box.Top.Visible = true
+                        espObj.Box.Bottom.From = boxPosition + boxSize; espObj.Box.Bottom.To = boxPosition + boxSize - Vector2.new(0, cornerSize); espObj.Box.Bottom.Color = playerColor; espObj.Box.Bottom.Visible = true
+                    else
+                        for _, obj in pairs(espObj.Box) do obj.Visible = false end
+                    end
+                    if ESPFlags.HealthBar then
+                        local healthPercent = humanoid.Health / humanoid.MaxHealth
+                        local barHeight = boxSize.Y * healthPercent
+                        espObj.HealthBar.Outline.Position = boxPosition - Vector2.new(6, 0); espObj.HealthBar.Outline.Size = Vector2.new(4, boxSize.Y); espObj.HealthBar.Outline.Visible = true
+                        espObj.HealthBar.Fill.Position = boxPosition - Vector2.new(6, -boxSize.Y + barHeight); espObj.HealthBar.Fill.Size = Vector2.new(4, barHeight)
+                        espObj.HealthBar.Fill.Color = Color3.fromRGB(255 - (255*healthPercent), 255 * healthPercent, 0); espObj.HealthBar.Fill.Visible = true
+                    else espObj.HealthBar.Outline.Visible = false; espObj.HealthBar.Fill.Visible = false end
+                    if ESPFlags.Name then
+                        espObj.Info.Name.Text = player.DisplayName or player.Name
+                        espObj.Info.Name.Position = Vector2.new(boxPosition.X + boxSize.X/2, boxPosition.Y - 16); espObj.Info.Name.Visible = true
+                    else espObj.Info.Name.Visible = false end
+                    if ESPFlags.Distance then
+                        local dist = math.floor((rootPart.Position - Camera.CFrame.Position).Magnitude)
+                        espObj.Info.Distance.Text = tostring(dist) .. " studs"; espObj.Info.Distance.Position = Vector2.new(boxPosition.X + boxSize.X/2, boxPosition.Y + boxSize.Y + 2); espObj.Info.Distance.Visible = true
+                    else espObj.Info.Distance.Visible = false end
+                    if ESPFlags.Snaplines then
+                        espObj.Snapline.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y); espObj.Snapline.To = Vector2.new(pos.X, pos.Y); espObj.Snapline.Color = playerColor; espObj.Snapline.Visible = true
+                    else espObj.Snapline.Visible = false end
+
+                    if ESPFlags.LookTracers and character:FindFirstChild("Head") then
+                        local headCf = character.Head.CFrame
+                        local lookAt = headCf.Position + (headCf.LookVector * 10)
+                        local headPos, hOnScreen = Camera:WorldToViewportPoint(character.Head.Position)
+                        local lookPos, lOnScreen = Camera:WorldToViewportPoint(lookAt)
+                        if hOnScreen and lOnScreen then
+                            espObj.LookTracer.From = Vector2.new(headPos.X, headPos.Y)
+                            espObj.LookTracer.To = Vector2.new(lookPos.X, lookPos.Y)
+                            espObj.LookTracer.Color = playerColor
+                            espObj.LookTracer.Visible = true
+                        else espObj.LookTracer.Visible = false end
+                    else espObj.LookTracer.Visible = false end
+
+                    if ESPFlags.Skeleton then
+                        local joints = {
+                            {"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"}, 
+                            {"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"}, {"LeftLowerArm", "LeftHand"},
+                            {"UpperTorso", "RightUpperArm"}, {"RightUpperArm", "RightLowerArm"}, {"RightLowerArm", "RightHand"},
+                            {"LowerTorso", "LeftUpperLeg"}, {"LeftUpperLeg", "LeftLowerLeg"}, {"LeftLowerLeg", "LeftFoot"},
+                            {"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}, {"RightLowerLeg", "RightFoot"}
+                        }
+                        for i, joint in ipairs(joints) do
+                            local part1 = character:FindFirstChild(joint[1])
+                            local part2 = character:FindFirstChild(joint[2])
+                            if part1 and part2 then
+                                local p1, s1 = Camera:WorldToViewportPoint(part1.Position)
+                                local p2, s2 = Camera:WorldToViewportPoint(part2.Position)
+                                if s1 and s2 then
+                                    espObj.Skeleton[i].From = Vector2.new(p1.X, p1.Y)
+                                    espObj.Skeleton[i].To = Vector2.new(p2.X, p2.Y)
+                                    espObj.Skeleton[i].Color = playerColor
+                                    espObj.Skeleton[i].Visible = true
+                                else espObj.Skeleton[i].Visible = false end
+                            else espObj.Skeleton[i].Visible = false end
+                        end
+                    else
+                        for _, line in ipairs(espObj.Skeleton) do line.Visible = false end
+                    end
+                else
+                    for _, obj in pairs(espObj.Box) do obj.Visible = false end
+                    espObj.Tracer.Visible = false; espObj.HealthBar.Outline.Visible = false; espObj.HealthBar.Fill.Visible = false
+                    for _, obj in pairs(espObj.Info) do obj.Visible = false end; espObj.Snapline.Visible = false
+                    espObj.LookTracer.Visible = false; for _, line in ipairs(espObj.Skeleton) do line.Visible = false end
+                end
+            else
+                for _, obj in pairs(espObj.Box) do obj.Visible = false end
+                espObj.Tracer.Visible = false; espObj.HealthBar.Outline.Visible = false; espObj.HealthBar.Fill.Visible = false
+                for _, obj in pairs(espObj.Info) do obj.Visible = false end; espObj.Snapline.Visible = false
+                espObj.LookTracer.Visible = false; for _, line in ipairs(espObj.Skeleton) do line.Visible = false end
+            end
+
+            end -- espObj check
+            
+            -- ESP 3: Billboard
+            local bbObj = BillboardESPObjects[player]
+            if ESPFlags.AdvancedNametags and ESPFlags.Enabled and character and rootPart and humanoid and humanoid.Health > 0 then
+                if not bbObj or not bbObj.Nametag or not bbObj.Nametag.Parent then CreateBillboardESP(player); bbObj = BillboardESPObjects[player] end
+                if bbObj then
+                    bbObj.Nametag.Adornee = rootPart; bbObj.Nametag.Enabled = true
+                    local pct = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+                    bbObj.HealthBarFill.Size = UDim2.fromScale(pct, 1)
+                    bbObj.HealthBarFill.BackgroundColor3 = pct > 0.5 and UI_THEME.Success or UI_THEME.Fail
+                    bbObj.HealthBarFrame.Visible = ESPFlags.AdvancedHealth
+                    local localChar = LocalPlayer.Character; local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
+                    if localRoot and ESPFlags.AdvancedDistance then
+                        bbObj.SubLabel.Text = tostring(math.floor((rootPart.Position - localRoot.Position).Magnitude)) .. "m"; bbObj.SubLabel.Visible = true
+                    else bbObj.SubLabel.Visible = false end
+                    local currentTool = character:FindFirstChildOfClass("Tool")
+                    if currentTool and ESPFlags.AdvancedEquipped then bbObj.EquipLabel.Text = "[" .. currentTool.Name .. "]"; bbObj.EquipLabel.Visible = true
+                    else bbObj.EquipLabel.Visible = false end
+                end
+            else
+                if bbObj and bbObj.Nametag then bbObj.Nametag.Enabled = false end
+            end
+        end
+    end)
+end)
+
+
 -- ========== AIMBOT / SILENT / FOV DRAWING ==========
 local SilentTarget = nil
 local AimlockTarget = nil
@@ -1519,13 +1815,13 @@ local function GetClosestPlayerToMouseSilent()
     local mousePos = GetMousePosition()
     local radius = Silent.UseFieldOfView and Silent.Radius or math.huge
     for _, player in ipairs(Players:GetPlayers()) do
-        if not isValidCombatPlayer(player) then break end
+        if not isValidCombatPlayer(player) then continue end
         local head = player.Character:FindFirstChild("Head")
-        if not head then break end
+        if not head then continue end
         local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-        if not onScreen then break end
+        if not onScreen then continue end
         local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-        if distance > radius then break end
+        if distance > radius then continue end
         if distance < bestDistance then bestDistance = distance; bestTarget = player end
     end
     return bestTarget
@@ -1545,22 +1841,175 @@ local function GetClosestPlayerToMouseAimbot()
     local mousePos = GetMousePosition()
     local radius = Aimlock.UseFieldOfView and Aimlock.Radius or 9e9
     for _, player in ipairs(Players:GetPlayers()) do
-        if not isValidCombatPlayer(player) then break end
+        if not isValidCombatPlayer(player) then continue end
         local targetPart = player.Character:FindFirstChild(Aimlock.TargetPart)
-        if not targetPart then break end
+        if not targetPart then continue end
         local root = player.Character:FindFirstChild("HumanoidRootPart")
-        if not root then break end
-        if (root.Position - Camera.CFrame.Position).Magnitude > Aimlock.MaxDistance then break end
-        if Aimlock.WallCheck and not wallCheckCharacter(player.Character) then break end
+        if not root then continue end
+        if (root.Position - Camera.CFrame.Position).Magnitude > Aimlock.MaxDistance then continue end
+        if Aimlock.WallCheck and not wallCheckCharacter(player.Character) then continue end
         local screenPoint, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-        if not onScreen then break end
+        if not onScreen then continue end
         local magnitude = (Vector2.new(screenPoint.X, screenPoint.Y) - mousePos).Magnitude
         if magnitude <= radius and magnitude < bestDistance then bestDistance = magnitude; bestTarget = player end
     end
     return bestTarget
 end
 
+local function isGunRaycastCall()
+    if type(getcallingscript) ~= "function" then
+        return true
+    end
 
+    local callingScript = getcallingscript()
+    if not callingScript then
+        return true
+    end
+
+    local scriptName = callingScript.Name
+    return scriptName == "GunScript_Local"
+        or scriptName == "GunScript"
+        or scriptName == "BulletVisualizerServerScript"
+        or scriptName == "BulletVisualizerClientScript"
+end
+
+if hookmetamethod then
+    local __namecall
+    __namecall = hookmetamethod(workspace, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        if type(method) ~= "string" then return __namecall(self, ...) end
+        local lowerMethod = string.lower(method)
+
+        if checkcaller() then
+            return __namecall(self, ...)
+        end
+
+        local isRaycast = string.find(lowerMethod, "raycast") ~= nil
+        local isFindPartOnRay = string.find(lowerMethod, "findpartonray") ~= nil
+        if not isRaycast and not isFindPartOnRay then
+            return __namecall(self, ...)
+        end
+
+        if not isGunRaycastCall() then
+            return __namecall(self, ...)
+        end
+
+        local args = {...}
+
+        if Silent.Enabled then
+            if not (math.random(0, 100) <= Silent.HitChance) then
+                return __namecall(self, unpack(args))
+            end
+
+            local target = SilentTarget
+            if target and target.Character and isValidCombatPlayer(target) then
+                local targetPart = target.Character:FindFirstChild(Silent.HitParts[1] or "Head")
+                    or target.Character:FindFirstChild("HumanoidRootPart")
+                    or target.Character:FindFirstChild("Head")
+                if targetPart then
+                    local origin
+                    if isFindPartOnRay and args[1] then
+                        origin = args[1].Origin
+                    elseif isRaycast and args[1] then
+                        origin = args[1]
+                    end
+
+                    if origin then
+                        local direction = (targetPart.Position - origin).Unit * 9e17
+
+                        if isFindPartOnRay then
+                            if Silent.WallBang then
+                                return targetPart, targetPart.Position, Vector3.new(0, 0, 0)
+                            end
+                            args[1] = Ray.new(origin, direction)
+                        elseif isRaycast then
+                            args[2] = direction
+                        end
+                    end
+                end
+            end
+        end
+
+        return __namecall(self, unpack(args))
+    end)
+end
+
+RunService.RenderStepped:Connect(function()
+    SilentTarget = GetClosestPlayerToMouseSilent()
+    AimlockTarget = GetClosestPlayerToMouseAimbot()
+    local mouseLocation = UserInputService:GetMouseLocation()
+
+    if AimlockTarget and AimlockTarget.Character and AimlockTarget.Character:FindFirstChild(Aimlock.TargetPart) then
+        local targetPart = AimlockTarget.Character:FindFirstChild(Aimlock.TargetPart)
+        if Aimlock.Enabled and IsAimlockActive() then
+            if Aimlock.Type == "Mouse" and Move_Mouse_Function then
+                local screenPoint, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                if onScreen then
+                    local mousePos = GetMousePosition()
+                    local delta = Vector2.new(screenPoint.X - mousePos.X, screenPoint.Y - mousePos.Y)
+                    local smoothing = math.max(1, Aimlock.Smoothness + 1)
+                    Move_Mouse_Function(delta.X / smoothing, delta.Y / smoothing)
+                end
+            else
+                local smoothness = math.clamp(Aimlock.Smoothness * 10, 1, 99)
+                Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetPart.Position), (100 - smoothness) / 100)
+            end
+        end
+    end
+
+    AimbotFieldOfView.Visible = (Aimlock.Enabled and Aimlock.DrawFieldOfView and Aimlock.UseFieldOfView) or (Silent.Enabled and Silent.DrawFieldOfView)
+    AimbotFieldOfView.Radius = Aimlock.Enabled and Aimlock.Radius or Silent.Radius
+    AimbotFieldOfView.Color = Aimlock.Enabled and Aimlock.FieldOfViewColor or Silent.FieldOfViewColor
+    AimbotFieldOfView.NumSides = Aimlock.Enabled and Aimlock.Sides or Silent.Sides
+    AimbotFieldOfView.Position = mouseLocation
+    AimbotFieldOfViewOutline.NumSides = AimbotFieldOfView.NumSides
+    AimbotFieldOfViewOutline.Radius = AimbotFieldOfView.Radius
+    AimbotFieldOfViewOutline.Position = AimbotFieldOfView.Position
+    AimbotFieldOfViewOutline.Visible = AimbotFieldOfView.Visible
+    AimbotFieldOfViewFill.Visible = AimbotFieldOfView.Visible
+    AimbotFieldOfViewFill.NumSides = AimbotFieldOfView.NumSides
+    AimbotFieldOfViewFill.Color = AimbotFieldOfView.Color
+    AimbotFieldOfViewFill.Radius = AimbotFieldOfView.Radius
+    AimbotFieldOfViewFill.Position = AimbotFieldOfView.Position
+    AimbotFieldOfViewFill.Transparency = Aimlock.Enabled and Aimlock.FieldOfViewTransparency or Silent.FieldOfViewTransparency
+
+    AimbotSnapline.Color = Aimlock.SnaplineColor
+    AimbotSnapline.Visible = Aimlock.Enabled and IsAimlockActive() and Aimlock.Snapline and AimlockTarget ~= nil
+    AimbotSnapline.Thickness = Aimlock.SnaplineThickness
+    AimbotSnaplineOutline.Thickness = Aimlock.SnaplineThickness + 2
+    AimbotSnaplineOutline.Visible = AimbotSnapline.Visible
+
+    if AimlockTarget and AimlockTarget.Character and AimlockTarget.Character:FindFirstChild(Aimlock.TargetPart) then
+        local aimlockPosition, onScreen = Camera:WorldToViewportPoint(AimlockTarget.Character:FindFirstChild(Aimlock.TargetPart).Position)
+        AimbotSnapline.Visible = Aimlock.Snapline and AimlockTarget ~= nil and onScreen
+        AimbotSnaplineOutline.Visible = AimbotSnapline.Visible
+        if AimbotSnapline.Visible and onScreen then
+            AimbotSnapline.From = mouseLocation; AimbotSnaplineOutline.From = AimbotSnapline.From
+            AimbotSnapline.To = Vector2.new(aimlockPosition.X, aimlockPosition.Y); AimbotSnaplineOutline.To = AimbotSnapline.To
+        end
+    else
+        AimbotSnapline.Visible = false; AimbotSnaplineOutline.Visible = false
+    end
+
+    if Silent.Snapline and SilentTarget and SilentTarget.Character and isValidCombatPlayer(SilentTarget) then
+        local snapPart = SilentTarget.Character:FindFirstChild("Head") or SilentTarget.Character:FindFirstChild("HumanoidRootPart")
+        if snapPart then
+            local snapPos, onScreen = Camera:WorldToViewportPoint(snapPart.Position)
+            local targetScreenDist = (Vector2.new(snapPos.X, snapPos.Y) - mouseLocation).Magnitude
+            local inFov = not Silent.UseFieldOfView or (targetScreenDist <= Silent.Radius)
+            if onScreen and inFov then
+                local muzzleWorldPos = getGunMuzzlePosition()
+                local startPos
+                if muzzleWorldPos then
+                    local muzzleScreen = Camera:WorldToViewportPoint(muzzleWorldPos)
+                    startPos = Vector2.new(muzzleScreen.X, muzzleScreen.Y)
+                else startPos = mouseLocation end
+                SilentSnapline.From = startPos; SilentSnapline.To = Vector2.new(snapPos.X, snapPos.Y); SilentSnapline.Color = Silent.SnaplineColor; SilentSnapline.Thickness = Silent.SnaplineThickness; SilentSnapline.Visible = true
+                SilentSnaplineOutline.From = startPos; SilentSnaplineOutline.To = SilentSnapline.To; SilentSnaplineOutline.Thickness = Silent.SnaplineThickness + 2; SilentSnaplineOutline.Visible = true
+            else SilentSnapline.Visible = false; SilentSnaplineOutline.Visible = false end
+        else SilentSnapline.Visible = false; SilentSnaplineOutline.Visible = false end
+    else SilentSnapline.Visible = false; SilentSnaplineOutline.Visible = false end
+end)
 
 -- ========== PROMPT INSTANT INTERACTION ==========
 local function setupPrompt(prompt, enableInstant)
@@ -1824,7 +2273,7 @@ task.spawn(function()
     while task.wait(1) do
         if AutoGrabMoney then
             local dollas = workspace:FindFirstChild("Dollas")
-            if not dollas then break end
+            if not dollas then continue end
             for _, item in ipairs(dollas:GetChildren()) do
                 if not AutoGrabMoney then break end
                 if (item.Name == "DeadMoney" or item.Name == "Money") and item:IsA("BasePart") then
@@ -1832,7 +2281,7 @@ task.spawn(function()
                     if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
                         local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                         local root = character:FindFirstChild("HumanoidRootPart")
-                        if not root then break end
+                        if not root then continue end
                         local oldCFrame = root.CFrame
                         getgenv().SwimMethod = true; task.wait(0.3)
                         root.CFrame = item.CFrame + Vector3.new(0, 2, 0); task.wait(0.3)
@@ -1845,6 +2294,27 @@ task.spawn(function()
             end
         end
     end
+end)
+
+-- ========== GUN CHAMS COLOR ==========
+task.spawn(function()
+    RunService.RenderStepped:Connect(function()
+        if not GunChams then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local tool = char:FindFirstChildOfClass("Tool")
+        if not tool then return end
+        for _, v in pairs(tool:GetDescendants()) do
+            if v:IsA("BasePart") then
+                if not GunOriginalColors[v] then GunOriginalColors[v] = v.Color end
+                if RainbowGun then
+                    local hue = (tick() % 5) / 5
+                    v.Color = Color3.fromHSV(hue, 1, 1)
+                else v.Color = GunChamsColor end
+                v.Material = Enum.Material.Neon
+            end
+        end
+    end)
 end)
 
 -- ========== MOBILE / KEYBOARD TOGGLE (UI) ==========
@@ -2370,18 +2840,94 @@ VehicleSection = PlayerTab:Section({Name = "Vehicle Settings", Side = 2})
         sendNotification("Bring Car", "Car brought successfully!")
     end})
 
+GunModsSection = PlayerTab:Section({Name = "Gun Modifications", Side = 1})
+    local function bindWeaponToggle(name, key, flag)
+        GunModsSection:Toggle({Name = name, Flag = flag, Default = false, Callback = function(state) WeaponMods[key] = state; applyAllWeaponMods() end})
+    end
+    bindWeaponToggle("Infinite Ammo", "InfiniteAmmo", "WM_InfiniteAmmo")
+    bindWeaponToggle("Infinite Mag", "InfiniteClips", "WM_InfiniteClips")
+    bindWeaponToggle("80k Bullets", "Bullets80k", "WM_Bullets80k")
+    bindWeaponToggle("No Recoil", "ModifyRecoilValue", "WM_NoRecoil")
+    bindWeaponToggle("No Spread", "ModifySpreadValue", "WM_NoSpread")
+    bindWeaponToggle("No Jam", "DisableJamming", "WM_NoJam")
+    bindWeaponToggle("Instant Reload", "InstantReload", "WM_InstantReload")
+    bindWeaponToggle("Instant Equip", "InstantEquip", "WM_InstantEquip")
+    bindWeaponToggle("Full Auto", "Automatic", "WM_FullAuto")
+    bindWeaponToggle("Fast Fire Rate", "ModifyFireRate", "WM_FastFireRate")
+    bindWeaponToggle("One Tap Damage", "DamageAmplified", "WM_OneTapDamage")
+    bindWeaponToggle("Spoof Accuracy", "SpoofAccuracy", "WM_SpoofAccuracy")
+    bindWeaponToggle("Bullet Hitbox Expander", "HitboxExpander", "WM_HitboxExpander")
+    bindWeaponToggle("Bullet Hitbox Visible", "HitboxVisible", "WM_HitboxVisible")
+    bindWeaponToggle("Bullet Hitmarkers", "Hitmarkers", "WM_Hitmarkers")
+    GunModsSection:Slider({Name = "Reload Speed", Flag = "WM_ReloadSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value) WeaponMods.ReloadSpeed = value; applyAllWeaponMods() end})
+    GunModsSection:Slider({Name = "Equip Speed", Flag = "WM_EquipSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value) WeaponMods.EquipSpeed = value; applyAllWeaponMods() end})
+    GunModsSection:Slider({Name = "Bullet Hitbox Size", Flag = "WM_HitboxSize", Min = 1, Max = 10, Default = 1, Callback = function(value) WeaponMods.HitboxSize = value end})
+    GunModsSection:Toggle({Name = "Enable Gun Color", Flag = "WM_GunColor", Default = false, Callback = function(state)
+        GunChams = state
+        if not state then
+            for part, color in pairs(GunOriginalColors) do if part and part.Parent then part.Color = color; part.Material = Enum.Material.Plastic end end
+            GunOriginalColors = {}
+        end
+    end})
+    GunModsSection:Toggle({Name = "Rainbow Gun Color", Flag = "WM_GunRainbow", Default = false, Callback = function(state) RainbowGun = state end})
 end
 
 -- ============================================================================
 -- AIMING TAB
 -- ============================================================================
 do
+SilentSection = AimingTab:Section({Name = "Silent Aim", Side = 1})
+    SilentSection:Toggle({Name = "Enabled", Flag = "SilentEnabled", Default = false, Callback = function(state) Silent.Enabled = state; notifyToggle("Silent Aim", state) end})
+    SilentSection:Toggle({Name = "Visible Check", Flag = "SilentWallCheck", Default = false, Callback = function(state) setFlag("SilentWallCheck", state) end})
+    SilentSection:Dropdown({Name = "Target Parts", Flag = "SilentTargetParts", Default = "Head", Items = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart", "LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg"}, Callback = function(value) Silent.HitParts = { value } end})
+    SilentSection:Slider({Name = "Hit Chance", Flag = "SilentHitChance", Min = 0, Max = 100, Default = 100, Callback = function(value) Silent.HitChance = value end})
+    SilentSection:Toggle({Name = "Bullet Penetration (Wallbang)", Flag = "SilentWallBang", Default = false, Callback = function(state) Silent.WallBang = state end})
+SilentFOVSection = AimingTab:Section({Name = "Silent Aim FOV", Side = 2})
+    SilentFOVSection:Toggle({Name = "Use FOV", Flag = "SilentUseFOV", Default = false, Callback = function(state) Silent.UseFieldOfView = state end})
+    SilentFOVSection:Toggle({Name = "Draw FOV Circle", Flag = "SilentDrawFOV", Default = false, Callback = function(state) Silent.DrawFieldOfView = state end})
+    SilentFOVSection:Slider({Name = "FOV Radius", Flag = "SilentFOVRadius", Min = 0, Max = 1000, Default = 100, Callback = function(value) Silent.Radius = value end})
+    SilentFOVSection:Slider({Name = "FOV Sides", Flag = "SilentFOVSides", Min = 3, Max = 100, Default = 25, Callback = function(value) Silent.Sides = value end})
+SilentSnaplineSection = AimingTab:Section({Name = "Silent Aim Snapline", Side = 2})
+    SilentSnaplineSection:Toggle({Name = "Snapline to Target", Flag = "SilentSnapline", Default = false, Callback = function(state) Silent.Snapline = state end})
+    SilentSnaplineSection:Slider({Name = "Snapline Thickness", Flag = "SilentSnaplineThickness", Min = 1, Max = 5, Default = 1, Callback = function(value) Silent.SnaplineThickness = value end})
+AimbotSection = AimingTab:Section({Name = "Aimlock / Aimbot", Side = 1})
+    AimbotSection:Toggle({Name = "Enabled", Flag = "AimlockEnabled", Default = false, Callback = function(state) Aimlock.Enabled = state; notifyToggle("Aimlock", state) end})
+    AimbotSection:Dropdown({Name = "Activation", Flag = "AimlockActivation", Default = "always", Items = {"always", "mouse 1", "mouse 2", "toggle"}, Callback = function(value) Aimlock.Activation = value end})
+    AimbotSection:Dropdown({Name = "Target Part", Flag = "AimlockTargetPart", Default = "Head", Items = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"}, Callback = function(value) Aimlock.TargetPart = value end})
+    AimbotSection:Dropdown({Name = "Aim Type", Flag = "AimlockType", Default = "Mouse", Items = {"Mouse", "Camera"}, Callback = function(value) Aimlock.Type = value end})
+    AimbotSection:Toggle({Name = "Visible Check", Flag = "AimlockWallCheck", Default = false, Callback = function(state) Aimlock.WallCheck = state end})
+    AimbotSection:Toggle({Name = "Use FOV", Flag = "AimlockUseFOV", Default = false, Callback = function(state) Aimlock.UseFieldOfView = state end})
+    AimbotSection:Toggle({Name = "Draw FOV", Flag = "AimlockDrawFOV", Default = false, Callback = function(state) Aimlock.DrawFieldOfView = state end})
+    AimbotSection:Slider({Name = "FOV Radius", Flag = "AimlockFOVRadius", Min = 0, Max = 1000, Default = 100, Callback = function(value) Aimlock.Radius = value end})
+    AimbotSection:Slider({Name = "Max Distance", Flag = "AimlockMaxDistance", Min = 10, Max = 5000, Default = 1000, Callback = function(value) Aimlock.MaxDistance = value end})
+    AimbotSection:Slider({Name = "Smoothness", Flag = "AimlockSmoothness", Min = 1, Max = 50, Default = 1, Callback = function(value) Aimlock.Smoothness = value end})
+    AimbotSection:Toggle({Name = "Snapline", Flag = "AimlockSnapline", Default = false, Callback = function(state) Aimlock.Snapline = state end})
+    AimbotSection:Slider({Name = "Snapline Thickness", Flag = "AimlockSnaplineThickness", Min = 1, Max = 5, Default = 1, Callback = function(value) Aimlock.SnaplineThickness = value end})
 end
 
 -- ============================================================================
 -- VISUALS TAB
 -- ============================================================================
 do
+DrawingESPSection = VisualsTab:Section({Name = "Drawing ESP", Side = 1})
+    DrawingESPSection:Toggle({Name = "Master Switch", Flag = "EnemyESP", Default = false, Callback = function(state) ESPFlags.Enabled = state end})
+    DrawingESPSection:Toggle({Name = "Bounding Box", Flag = "EnemyBox", Default = false, Callback = function(state) ESPFlags.Box = state end})
+    DrawingESPSection:Toggle({Name = "Health Bar", Flag = "EnemyHealthBar", Default = false, Callback = function(state) ESPFlags.HealthBar = state end})
+    DrawingESPSection:Toggle({Name = "Display Name", Flag = "EnemyName", Default = false, Callback = function(state) ESPFlags.Name = state end})
+    DrawingESPSection:Toggle({Name = "Distance", Flag = "EnemyDistance", Default = false, Callback = function(state) ESPFlags.Distance = state end})
+    DrawingESPSection:Toggle({Name = "Snap Lines", Flag = "EnemySnaplines", Default = false, Callback = function(state) ESPFlags.Snaplines = state end})
+    DrawingESPSection:Toggle({Name = "Skeleton", Flag = "EnemySkeleton", Default = false, Callback = function(state) ESPFlags.Skeleton = state end})
+    DrawingESPSection:Toggle({Name = "Look Tracers", Flag = "EnemyLookTracers", Default = false, Callback = function(state) ESPFlags.LookTracers = state end})
+    DrawingESPSection:Toggle({Name = "Highlight Chams", Flag = "EnemyChams", Default = false, Callback = function(state) ESPFlags.Chams = state end})
+    local TracersSection = VisualsTab:Section({Name = "Bullet Tracers", Side = 2})
+    TracersSection:Toggle({Name = "Enable Tracers", Flag = "TracersEnabled", Default = false, Callback = function(state) Tracers.Enabled = state end})
+    TracersSection:Toggle({Name = "Rainbow Tracers", Flag = "TracersRainbow", Default = false, Callback = function(state) Tracers.Rainbow = state end})
+    TracersSection:Slider({Name = "Tracer Duration", Flag = "TracerDuration", Min = 0.5, Max = 10, Default = 3, Callback = function(val) Tracers.Duration = val end})
+AdvancedESPSection = VisualsTab:Section({Name = "Advanced Nametags (ESP 3)", Side = 2})
+    AdvancedESPSection:Toggle({Name = "Advanced Nametags Enabled", Flag = "ESP3Enabled", Default = false, Callback = function(state) ESPFlags.AdvancedNametags = state end})
+    AdvancedESPSection:Toggle({Name = "Show Advanced Healthbar", Flag = "ESP3Health", Default = false, Callback = function(state) ESPFlags.AdvancedHealth = state end})
+    AdvancedESPSection:Toggle({Name = "Show Advanced Distance", Flag = "ESP3Distance", Default = false, Callback = function(state) ESPFlags.AdvancedDistance = state end})
+    AdvancedESPSection:Toggle({Name = "Show Equipped Weapon", Flag = "ESP3Equipped", Default = false, Callback = function(state) ESPFlags.AdvancedEquipped = state end})
 SkySection = VisualsTab:Section({Name = "World Visuals", Side = 2})
     SkySection:Toggle({Name = "Enable Saturation", Flag = "SatEnabled", Default = false, Callback = function(state) WorldVisuals.SaturationEnabled = state end})
     SkySection:Slider({Name = "Saturation Value", Flag = "SatValue", Min = 0, Max = 200, Default = 50, Callback = function(val) WorldVisuals.SaturationValue = val/100 end})
@@ -2415,11 +2961,12 @@ Library:Init()
             task.wait(0.5)
             pcall(function()
                 local uiScreen = nil
-                local success = pcall(function() local _ = CoreGui.Name end)
+                local success = pcall(function() local _ = game:GetService("CoreGui").Name end)
                 if success then
-                    uiScreen = CoreGui:FindFirstChild("Thugsense")
+                    uiScreen = game:GetService("CoreGui"):FindFirstChild("Thugsense")
                 else
-                    uiScreen = LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("Thugsense")
+                    local playerGui = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+                    if playerGui then uiScreen = playerGui:FindFirstChild("Thugsense") end
                 end
                 
                 if uiScreen then
