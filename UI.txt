@@ -9,9 +9,10 @@ if Library.Theme then
     Library.Theme.Text = Color3.fromRGB(240, 240, 240)
 end
 
+-- Create the window using RichText tags to color specific words in the title
 local Window = Library:Window({
     Name = 'miani football  |  [v2.6]  |  License: <font color="#FFAA00">Lifetime</font>  |  <font color="#55FF00">Premium User</font>',
-    Size = UDim2.new(0, 500, 0, 600),
+    
     FadeSpeed = 0.0
 })
 
@@ -21,19 +22,19 @@ Watermark:SetVisibility(false)
 KeybindList:SetVisibility(false)
 
 -- Navigation tabs configuration
-local PlayerTab = Window:Page({Name = "Player", Columns = 2, Subtabs = false})
-local MainTab = Window:Page({Name = "Main", Columns = 2, Subtabs = false})
-local FarmingTab = Window:Page({Name = "Farming", Columns = 2, Subtabs = false})
-local AimingTab = Window:Page({Name = "Aiming", Columns = 2, Subtabs = false})
-local VisualsTab = Window:Page({Name = "Visuals", Columns = 2, Subtabs = false})
-local SettingsTab = Library:CreateSettingsPage(Window, Watermark, KeybindList)
+PlayerTab = Window:Page({Name = "Player",   Columns = 2, Subtabs = false})
+MainTab = Window:Page({Name = "Main",     Columns = 2, Subtabs = false})
+-- Autofarm merged into Farming tab to remove duplicates
+FarmingTab = Window:Page({Name = "Farming",  Columns = 2, Subtabs = false})
+AimingTab = Window:Page({Name = "Aiming",   Columns = 2, Subtabs = false})
+VisualsTab = Window:Page({Name = "Visuals",  Columns = 2, Subtabs = false})
+SettingsTab = Library:CreateSettingsPage(Window, Watermark, KeybindList)
 
 -- Optimize tab switching lag
 for _, page in ipairs(Window.Pages) do
     page.Turn = function(self, Bool)
         if self.Active == Bool then return end
         self.Active = Bool
-        
         if Bool then 
             self.Elements["Page"].Instance.Visible = true
             self.Elements["Text"].Instance.TextColor3 = Library.Theme.Accent
@@ -48,12 +49,913 @@ for _, page in ipairs(Window.Pages) do
     end
 end
 
--- ============================================================================
--- MOBILE SUPPORT / CLOSE BUTTON
--- ============================================================================
-local CoreGui = game:GetService("CoreGui")
-local LocalPlayer = game:GetService("Players").LocalPlayer
 
+
+-- ============================================================================
+-- QUICK BUY / QUICK OUTFITS LOGIC
+-- ============================================================================
+local shopItems = {}
+local selectedShopItem = nil
+
+local function collectShopItems()
+    local items = {}
+    local promptPurchases = workspace:FindFirstChild("PromptPurchases")
+    if promptPurchases then
+        for _, value in pairs(promptPurchases:GetChildren()) do
+            local price = value:FindFirstChild("Price")
+            local proxprompt = value:FindFirstChild("proxprompt")
+            local prompt = proxprompt and proxprompt:FindFirstChildOfClass("ProximityPrompt")
+            if price and proxprompt and prompt then
+                local gunWithPrice = string.format("%s - $%s", tostring(value), tostring(price.Value))
+                table.insert(items, gunWithPrice)
+            end
+        end
+    end
+    local gunsFolder = workspace:FindFirstChild("GUNS")
+    if gunsFolder then
+        for _, value in pairs(gunsFolder:GetChildren()) do
+            local price = value:FindFirstChild("Price", true)
+            local prompt = value:FindFirstChildWhichIsA("ProximityPrompt", true)
+            if price and prompt then
+                local gunWithPrice = string.format("%s - $%s", tostring(value), tostring(price.Value))
+                if not table.find(items, gunWithPrice) then
+                    table.insert(items, gunWithPrice)
+                end
+            end
+        end
+    end
+    if #items == 0 then
+        items = {"Shiesty", "WhiteShiesty", "Water", "RawSteak", "RawChicken", "Bagelite", ".45 Infinity", "BluGloves", "WhiteGloves", "BlackGloves", "RedGloves"}
+    end
+    return items
+end
+shopItems = collectShopItems()
+selectedShopItem = shopItems[1]
+
+local clothRemote = game:GetService("ReplicatedStorage"):WaitForChild("ClothShopRemote")
+local function equipOutfit(actions)
+    for _, args in ipairs(actions) do
+        pcall(function() clothRemote:FireServer(unpack(args)) end)
+        task.wait(0.1)
+    end
+end
+
+-- ============================================================================
+-- SHARED SERVICES & STATE (from Alabama)
+-- ============================================================================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local Lighting_Sky = game:GetService("Lighting")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- Flag helper (Thugsense stores its own flags, but we mirror state here)
+local Tracers = { Enabled = false, Duration = 3, StartColor = Color3.fromRGB(255, 85, 0), EndColor = Color3.fromRGB(0, 0, 0), Rainbow = false }
+local Tracer_Delay = false
+local function DrawBulletTracer(EndPos)
+    if Tracer_Delay then return end
+    Tracer_Delay = true
+    pcall(function()
+        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if not tool or not tool:FindFirstChild("Handle") then return end
+        
+        local muzzle = tool.Handle:FindFirstChild("GunMuzzlePoint") or tool.Handle:FindFirstChild("GunFirePoint") or tool.Handle
+        local startPos = muzzle:IsA("Attachment") and muzzle.WorldCFrame.Position or muzzle.Position
+        
+        local StartPart = Instance.new("Part")
+        StartPart.Anchored = true; StartPart.Transparency = 1; StartPart.Position = startPos
+        StartPart.Parent = workspace; StartPart.CanCollide = false; StartPart.CanQuery = false; StartPart.CanTouch = false
+
+        local EndPart = Instance.new("Part")
+        EndPart.Anchored = true; EndPart.CanCollide = false; EndPart.Transparency = 1
+        EndPart.Position = EndPos; EndPart.Parent = workspace; EndPart.CanQuery = false; EndPart.CanTouch = false
+
+        local Attachment1 = Instance.new("Attachment", StartPart)
+        local Attachment2 = Instance.new("Attachment", EndPart)
+        local Beam = Instance.new("Beam", StartPart)
+        Beam.Attachment0 = Attachment1; Beam.Attachment1 = Attachment2
+        Beam.FaceCamera = true; Beam.LightEmission = 1; Beam.LightInfluence = 0
+        Beam.Width0 = 0.05; Beam.Width1 = 0.05
+
+        if Tracers.Rainbow then
+            task.spawn(function()
+                while Beam and Beam.Parent do
+                    local Hue = tick() % 5 / 5
+                    local NextHue = (Hue + 0.1) % 1
+                    Beam.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromHSV(Hue, 1, 1)), ColorSequenceKeypoint.new(1, Color3.fromHSV(NextHue, 1, 1)) })
+                    task.wait(0.05)
+                end
+            end)
+        else
+            Beam.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Tracers.StartColor), ColorSequenceKeypoint.new(1, Tracers.EndColor) })
+        end
+
+        task.delay(Tracers.Duration, function()
+            StartPart:Destroy()
+            EndPart:Destroy()
+        end)
+    end)
+    task.spawn(function() task.wait(0.05); Tracer_Delay = false end)
+end
+
+local flags = {}
+local function setFlag(name, value)
+    flags[name] = value
+end
+local function getFlag(name, default)
+    if flags[name] == nil then return default end
+    return flags[name]
+end
+
+-- ============================================================================
+-- UTILITY FUNCTIONS
+local loadedEmoteCache = {}
+local currentEmoteTrack = nil
+local function playCustomEmote(id)
+    task.spawn(function()
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+        if not animator then return end
+        if currentEmoteTrack then pcall(function() currentEmoteTrack:Stop() end) end
+        
+        local anim = loadedEmoteCache[id]
+        if not anim then
+            local success, objects = pcall(function()
+                return game:GetObjects("rbxassetid://" .. tostring(id))
+            end)
+            if success and objects and #objects > 0 then
+                local item = objects[1]
+                if item:IsA("Animation") then
+                    anim = item
+                else
+                    anim = item:FindFirstChildWhichIsA("Animation", true)
+                end
+            end
+            if not anim then
+                anim = Instance.new("Animation")
+                anim.AnimationId = "rbxassetid://" .. tostring(id)
+            end
+            loadedEmoteCache[id] = anim
+        end
+        
+        pcall(function()
+            currentEmoteTrack = animator:LoadAnimation(anim)
+            currentEmoteTrack.Priority = Enum.AnimationPriority.Action4
+            currentEmoteTrack.Looped = true
+            currentEmoteTrack:Play()
+        end)
+        sendNotification("Emote", "Playing emote!")
+    end)
+end
+
+local customEmoteMap = {
+    ["Take The L"] = 98318652597666,
+    ["Trip Out"] = 135599476494116,
+    ["Levitate"] = 118574395769768,
+    ["Triple Jump"] = 95465599788325,
+    ["Take a Bow"] = 95926628409657,
+    ["Takedown"] = 137844868756845,
+    ["Triple Backflip"] = 85549933733036,
+    ["Head takeoff"] = 87826892596287,
+    ["Wave"] = 3576686446,
+    ["Point"] = 3576823880,
+    ["Dance"] = 3576720708,
+    ["Laugh"] = 3576777185,
+    ["Cheer"] = 3576738018
+}
+local emoteNames = {}
+for name in pairs(customEmoteMap) do table.insert(emoteNames, name) end
+table.sort(emoteNames)
+
+local CarFly = { Enabled = false, Speed = 150 }
+local carFlyConnection
+
+local function StopCarFly()
+    CarFly.Enabled = false
+    if carFlyConnection then carFlyConnection:Disconnect(); carFlyConnection = nil end
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v.Name == "SleepyHubCarVelocity" or v.Name == "SleepyHubCarGyro" then v:Destroy() end
+    end
+end
+
+local function StartCarFly()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildWhichIsA("Humanoid")
+    if not humanoid then return end
+    local seat = humanoid.SeatPart
+    if not seat or not seat:IsA("VehicleSeat") then
+        sendNotification("Car Fly", "Sit in a vehicle first!")
+        return
+    end
+    local root = seat.Parent.PrimaryPart or seat
+    StopCarFly()
+    CarFly.Enabled = true
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "SleepyHubCarVelocity"
+    bv.MaxForce = Vector3.new(1e9,1e9,1e9)
+    bv.Parent = root
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "SleepyHubCarGyro"
+    bg.MaxTorque = Vector3.new(1e9,1e9,1e9)
+    bg.P = 50000
+    bg.D = 1000
+    bg.CFrame = root.CFrame
+    bg.Parent = root
+    carFlyConnection = RunService.RenderStepped:Connect(function()
+        if not CarFly.Enabled then StopCarFly() return end
+        if not seat.Parent then StopCarFly() return end
+        local cam = workspace.CurrentCamera
+        local moveDir = Vector3.zero
+        local look = cam.CFrame.LookVector
+        local right = cam.CFrame.RightVector
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - look end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + right end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
+        if moveDir.Magnitude > 0 then
+            bv.Velocity = moveDir.Unit * CarFly.Speed
+            bg.CFrame = CFrame.new(root.Position, root.Position + moveDir)
+        else
+            bv.Velocity = Vector3.zero
+        end
+    end)
+end
+
+local function GetNearestCar(hrp)
+    local CivCars = workspace:FindFirstChild("CivCars")
+    if not CivCars then return nil end
+    local nearestCar = nil
+    local nearestDist = math.huge
+    for _, car in ipairs(CivCars:GetChildren()) do
+        if not car:IsA("Model") then break end
+        local seat = car:FindFirstChild("DriveSeat") or car:FindFirstChildWhichIsA("VehicleSeat")
+        if not seat or seat.Occupant then break end
+        if not car.PrimaryPart then
+            car.PrimaryPart = car:FindFirstChildWhichIsA("BasePart")
+        end
+        if not car.PrimaryPart then break end
+        local dist = (car.PrimaryPart.Position - hrp.Position).Magnitude
+        if dist < nearestDist then
+            nearestDist = dist
+            nearestCar = car
+        end
+    end
+    return nearestCar
+end
+
+-- ============================================================================
+local function sendNotification(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 5 })
+    end)
+end
+
+local function notifyToggle(name, enabled)
+    sendNotification(name, name .. (enabled and " enabled" or " disabled"))
+end
+
+local function formatMoney(amount)
+    local formatted = tostring(math.floor(tonumber(amount) or 0))
+    while true do
+        local newFormatted, count = formatted:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
+        formatted = newFormatted
+        if count == 0 then break end
+    end
+    return "$" .. formatted
+end
+
+local function getPing()
+    local ok, result = pcall(function()
+        return tonumber(string.match(LocalPlayer:GetNetworkPing(), '%d+'))
+    end)
+    if ok and result then return result end
+    return 100
+end
+
+local function GetPlayerList()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(list, p.Name)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+local function getSelectedPlayer(selectedName)
+    if type(selectedName) ~= "string" or selectedName == "" then return nil end
+    return Players:FindFirstChild(selectedName)
+end
+
+local function isValidCombatPlayer(player)
+    if not player or player == LocalPlayer then return false end
+    local character = player.Character
+    if not character then return false end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    return humanoid and humanoid.Health > 0 and root
+end
+
+local function wallCheckCharacter(character)
+    if not character or not character:FindFirstChild("Head") then return false end
+    local origin = Camera.CFrame.Position
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = { LocalPlayer.Character, Camera, character }
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.IgnoreWater = true
+    return workspace:Raycast(origin, character.Head.Position - origin, params) == nil
+end
+
+-- ============================================================================
+-- TELEPORT / SWIM METHOD
+-- ============================================================================
+getgenv().SwimMethod = false
+local Config = {}
+function Config:Teleport(targetCFrame)
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character:FindFirstChild("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not root then return false end
+
+    getgenv().SwimMethod = true
+    humanoid:ChangeState(0)
+    local num = 1
+    repeat
+        task.wait()
+        num = num + 1
+    until num >= 40 and not LocalPlayer:GetAttribute("LastACPos")
+
+    root.CFrame = targetCFrame
+    task.wait()
+    humanoid:ChangeState(2)
+    getgenv().SwimMethod = false
+    return true
+end
+
+-- ============================================================================
+-- CONFIGURATION TABLES (from Alabama)
+-- ============================================================================
+WeaponMods = {
+    InfiniteAmmo = false, InfiniteClips = false, Bullets80k = false,
+    ModifyRecoilValue = false, ModifySpreadValue = false, DisableJamming = false,
+    InstantReload = false, InstantEquip = false, Automatic = false,
+    ModifyFireRate = false, DamageAmplified = false, SpoofAccuracy = false,
+    HitboxExpander = false, HitboxVisible = false, Hitmarkers = false,
+    HitboxSize = 1, ReloadSpeed = 0.2, EquipSpeed = 0.2,
+}
+Silent = {
+    Enabled = false, WallBang = false, HitChance = 100, HitParts = {"Head"},
+    MaxDistance = 3000, UseFieldOfView = false, DrawFieldOfView = false,
+    Radius = 100, Sides = 25, FieldOfViewColor = Color3.new(1,1,1),
+    FieldOfViewTransparency = 0.75, Snapline = false, SnaplineColor = Color3.new(1,1,1),
+    SnaplineThickness = 1,
+}
+Aimlock = {
+    Enabled = false, Aiming = false, Activation = "always", TargetPart = "Head",
+    MaxDistance = 1000, Type = "Mouse", WallCheck = false, UseFieldOfView = false,
+    DrawFieldOfView = false, Radius = 100, FieldOfViewColor = Color3.new(1,1,1),
+    FieldOfViewTransparency = 0.25, Sides = 25, Smoothness = 1, Snapline = false,
+    SnaplineColor = Color3.new(1,1,1), SnaplineThickness = 1,
+}
+PlayerUtilities = {
+    SelectedPlayer = nil, BringingPlayer = false, BringingNearestPlayer = false, SpectatePlayer = false,
+    AutoKill = false, AutoRagdoll = false, BugPlayer = false,
+}
+ESPFlags = {
+    Enabled = false, Box = false, HealthBar = false, Name = false,
+    Distance = false, Snaplines = false, Chams = false,
+    AdvancedNametags = false, AdvancedHealth = false, AdvancedDistance = false,
+    AdvancedEquipped = false, Skeleton = false, LookTracers = false,
+}
+
+-- Movement / Misc state
+SpeedBoostEnabled = false
+JumpBoostEnabled = false
+InfJumpEnabled = false
+NoclipEnabled = false
+NoCameraBob = false
+NoKnockback = false
+AutoGrabMoney = false
+AutoCleanMoney = false
+MoneyDropEnabled = false
+AutoDupeCurrentItem = false
+DupeToolName = nil
+DupeCooldown = false
+DisableBloodEffects = false
+BypassLockedCars = false
+FasterRespawn = false
+RespawnWhereYouDied = false
+KeepToolsOnDeath = false
+AutoFOnLowHealth = false
+AutoStealLootbags = false
+AutoPickupBags = false
+StudioMoneyNotifyEnabled = false
+MarketProtectedTools = {}
+MarketHealthThreshold = 35
+DeathFrame = nil
+promptConnections = {}
+promptAddedConnection = nil
+
+-- Gun color / chams state
+GunChams = false
+RainbowGun = false
+GunChamsColor = Color3.fromRGB(0, 200, 0)
+GunOriginalColors = {}
+
+-- Fly state
+flyEnabled = false
+flySwimMethod = false
+flySpeedConnection = nil
+flyCFloop = nil
+flySpeedVal = 5
+
+
+-- ============================================================================
+-- BACKEND FUNCTIONS
+-- ============================================================================
+
+-- ========== DUPE / ITEM ==========
+local function duplicateCurrentItem()
+    if DupeCooldown then warn("Cooldown! Please wait."); return end
+    DupeCooldown = true
+    local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local Backpack = LocalPlayer:WaitForChild('Backpack')
+    local Tool = Character:FindFirstChildOfClass('Tool')
+    if not Tool then
+        warn("Couldn't find your tool! Please make sure you're holding one.")
+        DupeCooldown = false
+        return
+    end
+    Tool.Parent = Backpack
+    task.wait(0.5)
+    local ToolName = Tool.Name
+    local ToolId = nil
+    local ping = getPing()
+    local delay = 0.25 + ((math.clamp(ping, 0, 300) / 300) * 0.03)
+
+    local Connection = ReplicatedStorage.MarketItems.ChildAdded:Connect(function(item)
+        if item.Name == ToolName then
+            local owner = item:WaitForChild('owner', 2)
+            if owner and owner.Value == LocalPlayer.Name then
+                ToolId = item:GetAttribute('SpecialId')
+            end
+        end
+    end)
+
+    pcall(function() ReplicatedStorage.ListWeaponRemote:FireServer(ToolName, 676767) end)
+    task.wait(delay)
+    pcall(function() ReplicatedStorage.BackpackRemote:InvokeServer('Store', ToolName) end)
+    task.wait(3)
+    if ToolId then pcall(function() ReplicatedStorage.BuyItemRemote:FireServer(ToolName, 'Remove', ToolId) end) end
+    pcall(function() ReplicatedStorage.BackpackRemote:InvokeServer('Grab', ToolName) end)
+    task.wait(1)
+    local dupedTool = Backpack:FindFirstChild(ToolName)
+    if dupedTool then dupedTool.Parent = Character end
+    Connection:Disconnect()
+    task.wait(2)
+    DupeCooldown = false
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if not AutoDupeCurrentItem then break end
+        if not DupeToolName or DupeToolName == "nil" then break end
+        if not DupeCooldown then duplicateCurrentItem() end
+    end
+end)
+
+-- ========== CLEAN MONEY ==========
+local function GetGoodCleaner()
+    if not workspace:FindFirstChild("1# Map") then return nil end
+    local CounterInstance
+    for _, Value in pairs(workspace["1# Map"]:GetChildren()) do
+        if Value:FindFirstChild("CounterM") then CounterInstance = Value; break end
+    end
+    if not CounterInstance then return nil end
+    for _, _Value in pairs(CounterInstance:GetChildren()) do
+        local cashPrompt = _Value:FindFirstChild("CashPrompt", true)
+        local grabPrompt = _Value:FindFirstChild("GrabPrompt", true)
+        if cashPrompt and cashPrompt.Enabled and cashPrompt.ObjectText == "Count Bread" and grabPrompt and not grabPrompt.Enabled then
+            return _Value
+        end
+    end
+    return nil
+end
+
+local function CleanAllFilthyMoney()
+    local Player = LocalPlayer
+    if not Player then return end
+    if not Player:FindFirstChild("stored") or not Player.stored:FindFirstChild("FilthyStack") or Player.stored.FilthyStack.Value == 0 then
+        warn("You don't have any filthy cash!"); return
+    end
+    if not Player.Character or not Player.Character:FindFirstChild("HumanoidRootPart") then return end
+    if not Player.Character:FindFirstChild("Humanoid") or Player.Character.Humanoid.Health == 0 then return end
+    local Cleaner = GetGoodCleaner()
+    if not Cleaner then warn("Couldn't find a good cleaner!"); return end
+    pcall(function() Config:Teleport(Cleaner.WorldPivot or (Cleaner.CFrame or Cleaner:GetPivot())) end)
+    task.wait(0.4)
+    pcall(function() fireproximityprompt(Cleaner:FindFirstChild("CashPrompt", true)) end)
+    local onObj = Cleaner:FindFirstChild("On", true)
+    if onObj then repeat task.wait() until onObj.Color == Color3.fromRGB(74, 156, 69) else task.wait(0.5) end
+    task.wait(0.5)
+    pcall(function() fireproximityprompt(Cleaner:FindFirstChild("CashPrompt", true)) end)
+    task.wait(0.25)
+    pcall(function() Config:Teleport(Cleaner.WorldPivot or (Cleaner.CFrame or Cleaner:GetPivot())) end)
+    task.wait(0.4)
+    repeat task.wait() until Player.Backpack:FindFirstChild("MoneyReady")
+    Player.Character.Humanoid:EquipTool(Player.Backpack["MoneyReady"])
+    repeat task.wait(1) fireproximityprompt(Cleaner:FindFirstChild("GrabPrompt", true)) until not Player.Character:FindFirstChild("MoneyReady")
+    repeat task.wait() until Player.Backpack:FindFirstChild("BagOfMoney")
+    pcall(function() Config:Teleport(CFrame.new(-222, 284, -1201)) end)
+    task.wait(0.4)
+    if Player.Backpack:FindFirstChild("BagOfMoney") then Player.Character.Humanoid:EquipTool(Player.Backpack["BagOfMoney"]) end
+    task.wait(1)
+    pcall(function() fireproximityprompt(workspace:FindFirstChild("ATMMoney") and workspace.ATMMoney:FindFirstChild("Prompt", true) or (workspace.ATMMoney and workspace.ATMMoney.Prompt)) end)
+end
+
+-- ========== MONEY FUNCTIONS ==========
+local function GetPlayerMoneyAmount()
+    local pl = Players.LocalPlayer
+    if not pl then return nil end
+    local leader = pl:FindFirstChild("leaderstats") or pl:FindFirstChild("Leaderstats") or pl:FindFirstChild("stats")
+    if leader then
+        for _, name in ipairs({"Money","Cash","Bank","Coins","Wallet"}) do
+            local val = leader:FindFirstChild(name)
+            if val and type(val.Value) == "number" then return val.Value end
+        end
+    end
+    if pl.GetAttribute then
+        local a = pl:GetAttribute("Money") or pl:GetAttribute("Cash") or pl:GetAttribute("Coins")
+        if a and tonumber(a) then return tonumber(a) end
+    end
+    return nil
+end
+
+local function autoDepositAmount(amount)
+    pcall(function()
+        local BankAction = game:GetService("ReplicatedStorage"):FindFirstChild("BankAction")
+        if not BankAction then return end
+        if amount and tonumber(amount) and tonumber(amount) > 0 then
+            BankAction:FireServer("depo", tostring(math.floor(amount)))
+        else
+            BankAction:FireServer("depo", tostring(999999999))
+        end
+    end)
+end
+
+local function DropMoneyAmount(Amount)
+    local BankRemote = ReplicatedStorage:FindFirstChild('BankProcessRemote', true)
+    if not BankRemote then return false, "BankProcessRemote not found" end
+    local function send(...)
+        if BankRemote.InvokeServer then return BankRemote:InvokeServer(...) end
+        if BankRemote.FireServer then return BankRemote:FireServer(...) end
+        return nil
+    end
+    local attempts = {
+        {"Drop", tostring(Amount)}, {"Drop", tonumber(Amount) or Amount},
+        {{"Drop", tostring(Amount)}}, {{"Drop", tonumber(Amount) or Amount}},
+    }
+    for _, args in ipairs(attempts) do
+        local ok, result = pcall(send, unpack(args))
+        if ok and result ~= false then return true, result end
+    end
+    return false, "All drop attempts failed"
+end
+
+task.spawn(function()
+    while task.wait(0.3) do
+        if MoneyDropEnabled then
+            pcall(function() DropMoneyAmount(10000) end)
+        end
+    end
+end)
+
+local function SetupInfiniteMoney()
+    for _, itemName in ipairs({"Ice-Fruit Bag", "Ice-Fruit Cupz", "FijiWater", "FreshWater"}) do
+        pcall(function() ReplicatedStorage:WaitForChild("ExoticShopRemote"):InvokeServer(itemName) end)
+    end
+end
+
+local function InfMoneyHoldCupz()
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+    local originalCFrame = rootPart.CFrame
+    local iceFruitPart = workspace:WaitForChild("IceFruit Sell")
+    local prompt = iceFruitPart:WaitForChild("ProximityPrompt")
+    prompt.HoldDuration = 0
+    prompt.MaxActivationDistance = math.huge
+    Config:Teleport(iceFruitPart.CFrame)
+    task.wait(1)
+    for i = 1, 250 do
+        task.spawn(function() pcall(function() fireproximityprompt(prompt, 1) end) end)
+    end
+    task.wait(5)
+    Config:Teleport(originalCFrame)
+    task.wait(0.25)
+    getgenv().SwimMethod = false
+end
+
+local function GenerateMaxIllegalMoney()
+    local function GetFruitCup()
+        local Found, Cup = false, nil
+        for _, Value in next, {LocalPlayer.Backpack:GetChildren(), LocalPlayer.Character:GetChildren()} do
+            for _, _Value in pairs(Value) do
+                if _Value:IsA("Tool") and _Value.Name == "Ice-Fruit Cupz" then
+                    local cupPart = _Value:FindFirstChild("IceFruit Cup")
+                    if cupPart and cupPart:FindFirstChild("IceFruit PunchMedium") and cupPart["IceFruit PunchMedium"].Transparency ~= 1 then
+                        Found = true; Cup = _Value; break
+                    end
+                end
+            end
+            if Found then break end
+        end
+        return Found, Cup
+    end
+    local Found, Cup = GetFruitCup()
+    local OLDCFrame = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.CFrame
+    if Cup and Found and OLDCFrame then
+        if Cup.Parent == LocalPlayer.Backpack then LocalPlayer.Character.Humanoid:EquipTool(Cup); task.wait(1) end
+        Config:Teleport(workspace["IceFruit Sell"].CFrame); task.wait(0.5)
+        for Index = 1, 4000 do task.spawn(function() fireproximityprompt(workspace["IceFruit Sell"].ProximityPrompt) end) end
+        Config:Teleport(OLDCFrame); task.wait(8); return
+    end
+    local Itemz = {"FijiWater", "FreshWater", "Ice-Fruit Bag", "Ice-Fruit Cupz"}
+    local Stove
+    for _, Value in pairs(workspace.CookingPots:GetChildren()) do
+        if Value:IsA("Model") then
+            local prompt = Value:FindFirstChildWhichIsA("ProximityPrompt", true)
+            if prompt and prompt.ActionText == "Turn On" and prompt.Enabled then Stove = Value; break end
+        end
+    end
+    for _, Value in ipairs(Itemz) do
+        if not LocalPlayer.Backpack:FindFirstChild(Value) then
+            pcall(function() ReplicatedStorage:WaitForChild("ExoticShopRemote"):InvokeServer(Value) end)
+            task.wait(1)
+        end
+    end
+    local Check = false
+    for _, Value in ipairs(Itemz) do if not LocalPlayer.Backpack:FindFirstChild(Value) then Check = true end end
+    if Check then warn("Couldn't find the items! Please make sure you have more than $5,000"); return end
+    if not Stove then warn("Could not find a cooking stove."); return end
+    Config:Teleport(Stove.CookPart.CFrame); task.wait(1)
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+    LocalPlayer.Character.HumanoidRootPart.Anchored = true; task.wait(1.5)
+    fireproximityprompt(Stove:FindFirstChildWhichIsA("ProximityPrompt", true)); task.wait(2)
+    for _, Value in ipairs({"FijiWater", "FreshWater", "Ice-Fruit Bag"}) do
+        if LocalPlayer.Backpack:FindFirstChild(Value) then
+            LocalPlayer.Character.Humanoid:EquipTool(LocalPlayer.Backpack[Value]); task.wait(1)
+            fireproximityprompt(Stove:FindFirstChildWhichIsA("ProximityPrompt", true)); task.wait(3)
+        end
+    end
+    repeat task.wait() until Stove.CookPart.Steam.LoadUI.Enabled == false
+    if not LocalPlayer.Character:FindFirstChild("Ice-Fruit Cupz") and LocalPlayer.Backpack:FindFirstChild("Ice-Fruit Cupz") then
+        LocalPlayer.Character.Humanoid:EquipTool(LocalPlayer.Backpack["Ice-Fruit Cupz"]); task.wait(1)
+    end
+    task.wait(1); fireproximityprompt(Stove:FindFirstChildWhichIsA("ProximityPrompt", true)); task.wait(3)
+    LocalPlayer.Character.HumanoidRootPart.Anchored = false
+    Config:Teleport(workspace["IceFruit Sell"].CFrame); task.wait(1)
+    LocalPlayer.Character.HumanoidRootPart.Anchored = true; task.wait(1.5)
+    if not LocalPlayer.Character:FindFirstChild("Ice-Fruit Cupz") and LocalPlayer.Backpack:FindFirstChild("Ice-Fruit Cupz") then
+        LocalPlayer.Character.Humanoid:EquipTool(LocalPlayer.Backpack["Ice-Fruit Cupz"]); task.wait(1)
+    end
+    workspace["IceFruit Sell"].ProximityPrompt.HoldDuration = 0
+    for Index = 1, 4000 do task.spawn(function() fireproximityprompt(workspace["IceFruit Sell"].ProximityPrompt) end) end
+    LocalPlayer.Character.HumanoidRootPart.Anchored = false
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, true)
+end
+
+
+-- ========== AUTOFARM FUNCTIONS ==========
+local dumpsterIsRunning = false
+local dumpsterTask = nil
+local PawnRemote = ReplicatedStorage:FindFirstChild("PawnRemote")
+local Backpack = LocalPlayer:WaitForChild("Backpack")
+
+local function fireRemoteForAllBackpackItems()
+    for _, item in pairs(Backpack:GetChildren()) do
+        pcall(function() if PawnRemote then PawnRemote:FireServer(item.Name) end end)
+    end
+end
+
+Backpack.ChildAdded:Connect(function(child)
+    if dumpsterIsRunning then pcall(function() if PawnRemote then PawnRemote:FireServer(child.Name) end end) end
+end)
+
+
+-- ============================================================================
+-- MAIN TAB UI
+-- ============================================================================
+TargetSection = MainTab:Section({Name = "Target", Side = 1})
+    local playerList = GetPlayerList()
+    PlayerUtilities.SelectedPlayer = playerList[1] or ""
+    local targetDropdown = TargetSection:Dropdown({Name = "Select Player", Flag = "MainSelectPlayer", Default = PlayerUtilities.SelectedPlayer, Items = playerList, Callback = function(v) flags["MainSelectPlayer"] = v; PlayerUtilities.SelectedPlayer = v end})
+    Players.PlayerAdded:Connect(function() task.wait(1); pcall(function() targetDropdown:Refresh(GetPlayerList()) end) end)
+    Players.PlayerRemoving:Connect(function() task.wait(1); pcall(function() targetDropdown:Refresh(GetPlayerList()) end) end)
+    TargetSection:Toggle({Name = "Spectate", Flag = "Spectate", Default = false, Callback = function(state) PlayerUtilities.SpectatePlayer = state end})
+        TargetSection:Toggle({Name = "Bring Nearest Player", Flag = "BringNearestPlayer", Default = false, Callback = function(state) PlayerUtilities.BringingNearestPlayer = state; notifyToggle("Bring Nearest Player", state) end})
+    TargetSection:Toggle({Name = "Bring Player", Flag = "MainBringPlayer", Default = false, Callback = function(state) PlayerUtilities.BringingPlayer = state; notifyToggle("Bring Player", state) end})
+    TargetSection:Toggle({Name = "Bug / Kill Player - Car", Flag = "MainBugPlayer", Default = false, Callback = function(state) PlayerUtilities.BugPlayer = state; notifyToggle("Bug / Kill Player - Car", state) end})
+    TargetSection:Toggle({Name = "Auto Kill Player - Gun", Flag = "MainAutoKill", Default = false, Callback = function(state) PlayerUtilities.AutoKill = state; notifyToggle("Auto Kill Player - Gun", state) end})
+    TargetSection:Toggle({Name = "Auto Ragdoll Player - Gun", Flag = "MainAutoRagdoll", Default = false, Callback = function(state) PlayerUtilities.AutoRagdoll = state; notifyToggle("Auto Ragdoll Player - Gun", state) end})
+    TargetSection:Button({Name = "Refresh Player List", Callback = function() playerList = GetPlayerList(); pcall(function() targetDropdown:Refresh(playerList) end); sendNotification("Players", "Player list refreshed.") end})
+    TargetSection:Button({Name = "Teleport To Player", Callback = function()
+        local target = getSelectedPlayer(flags["MainSelectPlayer"])
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then Config:Teleport(target.Character.HumanoidRootPart.CFrame * CFrame.new(3, 0, 0)) end
+    end})
+    TargetSection:Button({Name = "Down Player - Hold Gun", Callback = function()
+        local target = getSelectedPlayer(flags["MainSelectPlayer"])
+        if not target or not target.Character or not target.Character:FindFirstChild("Humanoid") then return end
+        pcall(killGun, target.Name, "HumanoidRootPart", target.Character.Humanoid.Health - 5)
+    end})
+    TargetSection:Button({Name = "Kill Player - Hold Gun", Callback = function()
+        local target = getSelectedPlayer(flags["MainSelectPlayer"])
+        if not target then return end
+        pcall(killGun, target.Name, "HumanoidRootPart", math.huge)
+    end})
+    TargetSection:Button({Name = "God Player - Hold Gun", Callback = function()
+        local target = getSelectedPlayer(flags["MainSelectPlayer"])
+        if not target then return end
+        pcall(killGun, target.Name, "HumanoidRootPart", math.sqrt(-1))
+    end})
+    TargetSection:Button({Name = "Fling Player - Hold Gun", Callback = function()
+        local target = getSelectedPlayer(flags["MainSelectPlayer"])
+        if not target then return end
+        for _ = 1, 50 do pcall(killGun, target.Name, "RightUpperLeg", 0.01) end
+    end})
+    TargetSection:Button({Name = "Kill All Players - Hold Gun", Callback = function()
+        task.spawn(function()
+            for _, player in ipairs(Players:GetPlayers()) do
+                if isValidCombatPlayer(player) and not player.Character:FindFirstChildOfClass("ForceField") then pcall(killGun, player.Name, "HumanoidRootPart", math.huge); task.wait(0.1) end
+            end
+        end)
+    end})
+
+    
+    QuickBuySection = MainTab:Section({Name = "Quick Buy", Side = 1})
+    local shopDropdown = QuickBuySection:Dropdown({
+        Name = "Select Item",
+        Flag = "QuickShopItem",
+        Items = shopItems,
+        Default = shopItems[1],
+        Callback = function(value) selectedShopItem = value end
+    })
+    QuickBuySection:Button({Name = "Buy Selected Item", Callback = function()
+        if not selectedShopItem then sendNotification("Shop", "Select an item first!") return end
+        local itemName = selectedShopItem
+        local cleanName = string.match(itemName, "^(.*) %-")
+        if cleanName then itemName = cleanName:match("^%s*(.-)%s*$") end
+
+        local promptPurchases = workspace:FindFirstChild("PromptPurchases")
+        if promptPurchases and promptPurchases:FindFirstChild(itemName) then
+            local entry = promptPurchases[itemName]
+            local proxprompt = entry:FindFirstChild("proxprompt")
+            local prompt = proxprompt and proxprompt:FindFirstChildOfClass("ProximityPrompt")
+            if prompt then
+                local part = proxprompt:IsA("Part") and proxprompt.CFrame or (entry:IsA("BasePart") and entry.CFrame)
+                if part then
+                    Config:Teleport(part)
+                    task.wait(0.4)
+                    repeat pcall(function() fireproximityprompt(prompt) end) task.wait(0.1) until LocalPlayer.Backpack:FindFirstChild(itemName) or not LocalPlayer.Character
+                    sendNotification("Shop", "Purchased " .. itemName)
+                    return
+                end
+            end
+        end
+
+        local gunsFolder = workspace:FindFirstChild("GUNS")
+        if gunsFolder and gunsFolder:FindFirstChild(itemName) then
+            local entry = gunsFolder[itemName]
+            local prompt = entry:FindFirstChildWhichIsA("ProximityPrompt", true)
+            if prompt then
+                local part = entry:IsA("Part") and entry.CFrame or (entry:IsA("Model") and entry.PrimaryPart and entry.PrimaryPart.CFrame)
+                if part then
+                    Config:Teleport(part)
+                    task.wait(0.4)
+                    repeat pcall(function() fireproximityprompt(prompt) end) task.wait(0.1) until LocalPlayer.Backpack:FindFirstChild(itemName) or not LocalPlayer.Character
+                    sendNotification("Shop", "Purchased " .. itemName)
+                    return
+                end
+            end
+        end
+        sendNotification("Shop", "Could not find " .. itemName)
+    end})
+    QuickBuySection:Button({Name = "Refresh Items", Callback = function()
+        shopItems = collectShopItems()
+        selectedShopItem = shopItems[1]
+        pcall(function() shopDropdown:Refresh(shopItems) end)
+        sendNotification("Shop", "Found " .. #shopItems .. " items")
+    end})
+
+    QuickOutfitSection = MainTab:Section({Name = "Quick Outfits", Side = 2})
+    QuickOutfitSection:Button({Name = "Spiderman", Callback = function() equipOutfit({{"Buy", "Shirts", "Spiderman"}, {"Wear", "Shirts", "Spiderman"}, {"Buy", "Pants", "Spiderman"}, {"Wear", "Pants", "Spiderman"}, {"Buy", "Shiestys", "RedShiesty"}, {"Wear", "Shiestys", "RedShiesty"}}) end})
+    QuickOutfitSection:Button({Name = "All Black", Callback = function() equipOutfit({{"Buy", "Shirts", "Black"}, {"Wear", "Shirts", "Black"}, {"Buy", "Pants", "Black"}, {"Wear", "Pants", "Black"}, {"Buy", "Shiestys", "BlackShiesty"}, {"Wear", "Shiestys", "BlackShiesty"}}) end})
+    QuickOutfitSection:Button({Name = "Blu Moncler Drip", Callback = function() equipOutfit({{"Buy", "Shirts", "Blu Moncler"}, {"Wear", "Shirts", "Blu Moncler"}, {"Buy", "Pants", "Amiri Blue Jeans"}, {"Wear", "Pants", "Amiri Blue Jeans"}, {"Buy", "Shiestys", "Shiesty"}, {"Wear", "Shiestys", "Shiesty"}}) end})
+    QuickOutfitSection:Button({Name = "Amiri Star Drip", Callback = function() equipOutfit({{"Buy", "Shirts", "Amiri Star Hoodie"}, {"Wear", "Shirts", "Amiri Star Hoodie"}, {"Buy", "Pants", "Black Amiri Jeans B22"}, {"Wear", "Pants", "Black Amiri Jeans B22"}, {"Buy", "Shiestys", "Shiesty"}, {"Wear", "Shiestys", "Shiesty"}}) end})
+    QuickOutfitSection:Button({Name = "Red Sp5der Drip", Callback = function() equipOutfit({{"Buy", "Shirts", "Red Sp5der Sweats"}, {"Wear", "Shirts", "Red Sp5der Sweats"}, {"Buy", "Pants", "Red Sp5der Sweats"}, {"Wear", "Pants", "Red Sp5der Sweats"}, {"Buy", "Shiestys", "RedShiesty"}, {"Wear", "Shiestys", "RedShiesty"}}) end})
+    QuickOutfitSection:Button({Name = "Green Sp5der Drip", Callback = function() equipOutfit({{"Buy", "Shirts", "Green Sp5der Sweats"}, {"Wear", "Shirts", "Green Sp5der Hoodie"}, {"Buy", "Pants", "Green Sp5der Sweats"}, {"Wear", "Pants", "Green Sp5der Sweats"}, {"Buy", "Shiestys", "Shiesty"}, {"Wear", "Shiestys", "Shiesty"}}) end})
+    QuickOutfitSection:Button({Name = "Blue Sp5der Drip", Callback = function() equipOutfit({{"Buy", "Shirts", "Blue Sp5der Hoodie"}, {"Wear", "Shirts", "Blue Sp5der Hoodie"}, {"Buy", "Pants", "Blue Sp5der Sweats"}, {"Wear", "Pants", "Blue Sp5der Sweats"}, {"Buy", "Shiestys", "Shiesty"}, {"Wear", "Shiestys", "Shiesty"}}) end})
+    QuickOutfitSection:Button({Name = "Red Zipped Drip", Callback = function() equipOutfit({{"Buy", "Shirts", "Red Zipped Jacket"}, {"Wear", "Shirts", "Red Zipped Jacket"}, {"Buy", "Pants", "White AF1 BJeans"}, {"Wear", "Pants", "White AF1 BJeans"}}) end})
+
+
+TeleportSection = MainTab:Section({Name = "Teleports", Side = 2})
+    local teleportLocations = {
+        ["Deli Market 🧪"] = CFrame.new(-769, 255, -686),
+        ["Capital One Bank 🏦"] = CFrame.new(-225, 284, -1223),
+        ["Ice Box 🧊"] = CFrame.new(-198.8927001953125, 283.8486633300781, -1170.4500732421875),
+        ["Hotel 🏨"] = CFrame.new(-973, 254, -939),
+        ["Gun Shop 🔫"] = CFrame.new(92974, 122099, 17233),
+        ["Car Dealer 🚗"] = CFrame.new(-378.6668701171875, 253.2564697265625, -1245.4259033203125),
+        ["Laundromat 🧺"] = CFrame.new(-979.4635620117188, 253.65318298339844, -689.3339233398438),
+        ["Studio 🎙"] = CFrame.new(93408.453125, 14484.7158203125, 570.139404296875),
+        ["Basketball Court 🏀"] = CFrame.new(-942, 254, -409),
+        ["Safe 🔐"] = CFrame.new(-137, 303, -915),
+        ["Roof Top / Bank Tools 🛠"] = CFrame.new(-409, 334, -556),
+        ["Penthouse 🏙"] = CFrame.new(-111.67, 397.14, -564.46),
+        ["Hospital 🏥"] = CFrame.new(-1588.06, 254.27, 18.77),
+        ["Mansion 🏰"] = CFrame.new(-789.10, 253.57, 1380.76),
+        ["Mini Mansion 🏡"] = CFrame.new(-791.51, 256.79, 1414.42),
+        ["Pent House 🏙️"] = CFrame.new(-178.27, 397.13, -573.03),
+        ["Pent House 2 ☕"] = CFrame.new(-618.03, 356.54, -681.40),
+        ["Trailer Homes 🛻"] = CFrame.new(-1486.06, 253.28, 2227.72),
+        ["McDonald's 🍔"] = CFrame.new(-444.84, 253.97, -945.71),
+        ["Dollar General 🛒"] = CFrame.new(-413.66, 253.82, -1055.57),
+        ["Backpack Shop 🎒"] = CFrame.new(-694, 254, -684),
+        ["RPT 🏬"] = CFrame.new(-1522.69, 253.30, -590.58),
+        ["Exotic Dealer 🍃"] = CFrame.new(-1521.94, 272.55, -984.30),
+    }
+    local teleportNames = {}
+    for name in pairs(teleportLocations) do table.insert(teleportNames, name) end
+    table.sort(teleportNames)
+    TeleportSection:Dropdown({Name = "Select Location", Flag = "TeleportLocation", Default = teleportNames[1], Items = teleportNames, Callback = function(v) flags["TeleportLocation"] = v end})
+    TeleportSection:Button({Name = "Teleport To", Callback = function()
+        local loc = flags["TeleportLocation"] or teleportNames[1]
+        if teleportLocations[loc] then Config:Teleport(teleportLocations[loc]) end
+    end})
+MoneySection = MainTab:Section({Name = "Money", Side = 2})
+    MoneySection:Button({Name = "Check My Money", Callback = function()
+        local stored = LocalPlayer:FindFirstChild("stored")
+        if stored then
+            local money = stored:FindFirstChild("Money")
+            local filthy = stored:FindFirstChild("FilthyStack")
+            sendNotification("My Money", "Clean: " .. (money and formatMoney(money.Value) or "None") .. " | Dirty: " .. (filthy and formatMoney(filthy.Value) or "None"))
+        else
+            sendNotification("My Money", "No money data found")
+        end
+    end})
+    MoneySection:Button({Name = "Check Target Money", Callback = function()
+        local target = getSelectedPlayer(flags["MainSelectPlayer"])
+        if not target then
+            sendNotification("Target Money", "No target selected")
+            return
+        end
+        local stored = target:FindFirstChild("stored")
+        if stored then
+            local money = stored:FindFirstChild("Money")
+            local filthy = stored:FindFirstChild("FilthyStack")
+            sendNotification("Target: @" .. target.Name, "Clean: " .. (money and formatMoney(money.Value) or "None") .. " | Dirty: " .. (filthy and formatMoney(filthy.Value) or "None"))
+        else
+            sendNotification("Target: @" .. target.Name, "No money data")
+        end
+    end})
+    MoneySection:Button({Name = "Manual [Inf Money]", Callback = function() sendNotification("Inf Money", "Manual inf money triggered!"); InfMoneyHoldCupz() end})
+    MoneySection:Button({Name = "Teleport [Cook Pot]", Callback = function()
+        Config:Teleport(CFrame.new(-198.89, 283.85, -1170.45))
+        sendNotification("Teleport", "Teleported to Cook Pot!")
+    end})
+    MoneySection:Button({Name = "Buy Ice-Fruit [ITEMS]", Callback = function() sendNotification("Buy Items", "Buying Ice-Fruit items..."); SetupInfiniteMoney() end})
+    MoneySection:Button({Name = "Clean All Filthy Money", Callback = CleanAllFilthyMoney})
+    MoneySection:Button({Name = "Generate Max Illegal Money", Callback = GenerateMaxIllegalMoney})
+    MoneySection:Toggle({Name = "Auto Drop 10k", Flag = "AutoDrop10k", Default = false, Callback = function(state) MoneyDropEnabled = state end})
+DupeSection = MainTab:Section({Name = "Dupe", Side = 2})
+    DupeSection:Button({Name = "Dupe (Single)", Callback = function()
+        local Tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if Tool then DupeToolName = Tool.Name; duplicateCurrentItem() else sendNotification("Dupe", "Hold a gun first!") end
+    end})
+    DupeSection:Toggle({Name = "Start Auto Dupe", Flag = "AutoDupeCurrentItem", Default = false, Callback = function(state)
+        AutoDupeCurrentItem = state
+        if state then
+            local Tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+            if Tool then DupeToolName = Tool.Name; sendNotification("Auto Dupe", "Running! Duping: " .. DupeToolName)
+            else AutoDupeCurrentItem = false; sendNotification("Auto Dupe", "Hold a gun first!") end
+        else sendNotification("Auto Dupe", "Auto dupe stopped.") end
+    end})
+
+
+-- ============================================================================
+-- MOBILE SUPPORT / INIT
+-- ============================================================================
 local mobileGui = Instance.new("ScreenGui")
 mobileGui.Name = "MianiFootballMobileToggleMenu"
 mobileGui.ResetOnSpawn = false
@@ -131,6 +1033,32 @@ task.spawn(function()
     pcall(function()
         if Window and Window.Elements and Window.Elements["Title"] then
             Window.Elements["Title"].Instance.RichText = true
+        end
+    end)
+    
+    task.spawn(function()
+        for i = 1, 15 do
+            task.wait(0.5)
+            pcall(function()
+                local uiScreen = nil
+                local success = pcall(function() local _ = CoreGui.Name end)
+                if success then
+                    uiScreen = CoreGui:FindFirstChild("Thugsense")
+                else
+                    uiScreen = LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("Thugsense")
+                end
+                
+                if uiScreen then
+                    local uiScale = uiScreen:FindFirstChildWhichIsA("UIScale", true)
+                    if uiScale and uiScale.Scale < 1 then uiScale.Scale = 1 end
+                    
+                    for _, v in pairs(uiScreen:GetDescendants()) do
+                        if v:IsA("TextLabel") and string.find(v.Text, "miani football") then
+                            v.RichText = true
+                        end
+                    end
+                end
+            end)
         end
     end)
 end)
