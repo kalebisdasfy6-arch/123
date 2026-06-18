@@ -34,6 +34,9 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local HttpService = game:GetService("HttpService")
 local MarketplaceService = game:GetService("MarketplaceService")
 
+-- Ensure mobile CoreGui / PlayerGui menus do not block active game touchscreen inputs when closed/invisible
+local ContextActionService = game:GetService("ContextActionService")
+
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -851,12 +854,8 @@ task.spawn(function()
 end)
 
 -- ProximityPrompt Utilities
-local promptConnections = {}
-local promptAddedConnection
-
 local function setupPrompt(prompt, enableInstant)
     if not prompt or not prompt:IsA("ProximityPrompt") then return end
-    if promptConnections[prompt] then promptConnections[prompt] = nil end
     if enableInstant then
         prompt.HoldDuration = 0
         prompt.RequiresLineOfSight = false
@@ -864,21 +863,11 @@ local function setupPrompt(prompt, enableInstant)
         prompt.HoldDuration = 1
         prompt.RequiresLineOfSight = true
     end
-    promptConnections[prompt] = prompt
 end
 
 local function refreshPrompts(enableInstant)
     for _, prompt in ipairs(workspace:GetDescendants()) do
         if prompt:IsA("ProximityPrompt") then setupPrompt(prompt, enableInstant) end
-    end
-    if promptAddedConnection then
-        promptAddedConnection:Disconnect()
-        promptAddedConnection = nil
-    end
-    if enableInstant then
-        promptAddedConnection = workspace.DescendantAdded:Connect(function(descendant)
-            if descendant:IsA("ProximityPrompt") then setupPrompt(descendant, true) end
-        end)
     end
 end
 
@@ -1076,8 +1065,6 @@ ProximityPromptService.PromptButtonHoldBegan:Connect(function(Prompt, Self)
             if checkPrompt.Parent:FindFirstChild("DriveSeat") then
                 if checkPrompt:IsA("VehicleSeat") then
                     checkPrompt:Sit(LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid"))
-                else
-                    checkPrompt = checkPrompt.Parent
                 end
                 break
             end
@@ -2157,11 +2144,9 @@ if hookmetamethod then
 
         local args = {...}
 
-        if Silent.Enabled then
-            if not (math.random(0, 100) <= Silent.HitChance) then return __namecall(self, unpack(args)) end
-            local target = SilentTarget
-            if target and target.Character and IsPlayerValid(target) then
-                local targetPart = target.Character:FindFirstChild(Silent.HitParts[1] or "Head") or target.Character:FindFirstChild("HumanoidRootPart") or target.Character:FindFirstChild("Head")
+        if Silent.Enabled and SilentTarget and SilentTarget.Character and IsPlayerValid(SilentTarget) then
+            if math.random(1, 100) <= Silent.HitChance then
+                local targetPart = SilentTarget.Character:FindFirstChild(Silent.HitParts[1] or "Head") or SilentTarget.Character:FindFirstChild("HumanoidRootPart") or SilentTarget.Character:FindFirstChild("Head")
                 if targetPart then
                     local origin
                     if isFindPartOnRay and args[1] then origin = args[1].Origin
@@ -2193,6 +2178,9 @@ RunService.RenderStepped:Connect(function()
     if AimlockTarget and AimlockTarget.Character and AimlockTarget.Character:FindFirstChild(Aimlock.TargetPart) then
         local targetPart = AimlockTarget.Character:FindFirstChild(Aimlock.TargetPart)
         if Aimlock.Enabled and IsAimlockActive() then
+            -- Disable active ContextActionService mobile sink to ensure shooting works flawlessly
+            pcall(function() ContextActionService:UnbindAction("AimlockMobileSink") end)
+
             if Aimlock.Type == "Mouse" and Move_Mouse_Function then
                 local screenPoint, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
                 if onScreen then
@@ -3311,13 +3299,14 @@ end
 -- ==========================================
 -- PREMIUM MOBILE OREGON TOGGLE MENU & DISCORD TAG
 -- ==========================================
-local mobileMenuGui = Instance.new("ScreenGui")
-mobileMenuGui.Name = "AlabamaMobileToggleMenu"
-mobileMenuGui.ResetOnSpawn = false
-mobileMenuGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-mobileMenuGui.DisplayOrder = 99999
-pcall(function() mobileMenuGui.Parent = (gethui and gethui()) or CoreGui end)
-if not mobileMenuGui.Parent then mobileMenuGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+-- Flawless Mobile Open/Close Toggle Button (Independent GUI to prevent touchscreen input stealing)
+local toggleButtonGui = Instance.new("ScreenGui")
+toggleButtonGui.Name = "AlabamaMobileButtonOnly"
+toggleButtonGui.ResetOnSpawn = false
+toggleButtonGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+toggleButtonGui.DisplayOrder = 100000
+pcall(function() toggleButtonGui.Parent = (gethui and gethui()) or CoreGui end)
+if not toggleButtonGui.Parent then toggleButtonGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local toggleButton = Instance.new("ImageButton")
 toggleButton.Size = UDim2.new(0, 68, 0, 68)
@@ -3327,7 +3316,7 @@ toggleButton.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 toggleButton.BackgroundTransparency = 0.15
 toggleButton.ScaleType = Enum.ScaleType.Stretch
 toggleButton.Active = true
-toggleButton.Parent = mobileMenuGui
+toggleButton.Parent = toggleButtonGui
 
 local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 18); corner.Parent = toggleButton
 local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(255, 0, 0); stroke.Thickness = 3; stroke.Parent = toggleButton
