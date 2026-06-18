@@ -1,4 +1,3 @@
-getgenv().MianiHideUIOnStart = false -- force main UI visible
 local LoadingTick = os.clock()
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/sametexe001/sametlibs/refs/heads/main/Thugsense/Library.lua"))()
 
@@ -921,43 +920,7 @@ local function applyAllWeaponMods()
         end
         if WeaponMods.ModifyRecoilValue then settings.Recoil = 0; settings.CameraRecoilingEnabled = false end
         if WeaponMods.ModifySpreadValue then settings.Spread = 0; settings.SpreadX = 0; settings.SpreadY = 0; settings.Accuracy = 1 end
-        if WeaponMods.DisableJamming then
-            -- Safer No-Jam: clear jam chances without breaking gun functions
-            for _, key in ipairs({"JamChance", "JammingChance", "JamPercent", "JamRate"}) do
-                if type(settings[key]) == "number" then
-                    settings[key] = 0
-                end
-            end
-            for _, key in ipairs({"CanJam", "JammingEnabled", "JamEnabled", "Jammed", "IsJammed"}) do
-                if type(settings[key]) == "boolean" then
-                    settings[key] = false
-                end
-            end
-            pcall(function()
-                for _, obj in ipairs(tool:GetDescendants()) do
-                    local n = obj.Name:lower()
-                    if obj:IsA("BoolValue") and (n:find("jam") or n:find("stuck")) then
-                        obj.Value = false
-                    elseif obj:IsA("NumberValue") and n:find("jam") then
-                        obj.Value = 0
-                    end
-                end
-            end)
-            pcall(function()
-                local gunLocal = tool:FindFirstChild("GunScript_Local")
-                if gunLocal and type(getsenv) == "function" then
-                    local env = getsenv(gunLocal)
-                    if type(env) == "table" then
-                        for _, key in ipairs({"Jammed", "IsJammed", "CanJam", "JammingEnabled"}) do
-                            if type(env[key]) == "boolean" then env[key] = false end
-                        end
-                        for _, key in ipairs({"JamChance", "JammingChance", "JamPercent", "JamRate"}) do
-                            if type(env[key]) == "number" then env[key] = 0 end
-                        end
-                    end
-                end
-            end)
-        end
+        if WeaponMods.DisableJamming then settings.JamChance = 0 end
         if WeaponMods.InstantReload then settings.ReloadTime = WeaponMods.ReloadSpeed or 0.1 end
         if WeaponMods.InstantEquip then settings.EquipTime = WeaponMods.EquipSpeed or 0.1; settings.EquippingTime = WeaponMods.EquipSpeed or 0.1 end
         if WeaponMods.ModifyFireRate then settings.FireRate = 0 end
@@ -1902,44 +1865,6 @@ if UserInputService.TouchEnabled then
     end)
 end
 
--- Mobile fire fix: some executors/UI overlays stop the default mobile gun button from activating the Tool.
--- This only activates while touching the right side of the screen, where Roblox's fire button usually is.
-local MobileGunFireFix = true
-local MobileGunFireHeld = false
-local function TryMobileActivateGun()
-    if not MobileGunFireFix or not UserInputService.TouchEnabled then return end
-    local character = LocalPlayer.Character
-    local tool = character and character:FindFirstChildOfClass("Tool")
-    if tool then
-        pcall(function()
-            tool:Activate()
-        end)
-    end
-end
-UserInputService.TouchStarted:Connect(function(touch, gameProcessed)
-    if not MobileGunFireFix then return end
-    local cam = workspace.CurrentCamera
-    local viewport = cam and cam.ViewportSize or Vector2.new(1000, 1000)
-    local pos = touch.Position
-    -- Don't fire from left-side menu dragging; only support right-side mobile fire area.
-    if pos.X >= viewport.X * 0.52 then
-        MobileGunFireHeld = true
-        GlobalIsShooting = true
-        TryMobileActivateGun()
-    end
-end)
-UserInputService.TouchEnded:Connect(function()
-    if #UserInputService:GetTouches() == 0 then
-        MobileGunFireHeld = false
-        GlobalIsShooting = false
-    end
-end)
-RunService.Heartbeat:Connect(function()
-    if MobileGunFireHeld then
-        TryMobileActivateGun()
-    end
-end)
-
 if hookmetamethod then
     local __namecall
     __namecall = hookmetamethod(workspace, "__namecall", function(self, ...)
@@ -2394,7 +2319,7 @@ task.spawn(function()
     end)
 end)
 
--- Custom floating mobile toggle removed so Roblox mobile gun controls are not blocked.
+-- Mobile-safe: no custom floating overlay/touch button, so default Roblox mobile shooting stays untouched.
 
 -- ============================================================================
 -- UI CREATION (Thugsense API) -- CLEAN / DEDUPLICATED
@@ -2842,7 +2767,6 @@ VehicleSection = PlayerTab:Section({Name = "Vehicle Settings", Side = 2})
     end})
 
 GunModsSection = PlayerTab:Section({Name = "Gun Modifications", Side = 1})
-    GunModsSection:Toggle({Name = "Mobile Gun Fire Fix", Flag = "MobileGunFireFix", Default = true, Callback = function(state) MobileGunFireFix = state end})
     local function bindWeaponToggle(name, key, flag)
         GunModsSection:Toggle({Name = name, Flag = flag, Default = false, Callback = function(state) WeaponMods[key] = state; applyAllWeaponMods() end})
     end
@@ -2947,15 +2871,17 @@ end
 -- ============================================================================
 Library:Init()
 
--- Force the full main UI to show, even if you ran a hidden/headless version before.
+-- Force main UI visible without adding mobile overlays/touch blockers.
 task.spawn(function()
-    task.wait(0.35)
+    task.wait(0.25)
     pcall(function()
         if Window and Window.Elements and Window.Elements["MainFrame"] then
             Window.Elements["MainFrame"].Instance.Visible = true
         end
     end)
 end)
+
+
 
     task.spawn(function()
     task.wait(0.2)
