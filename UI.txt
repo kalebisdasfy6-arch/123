@@ -116,6 +116,53 @@ local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
 -- Flag helper (Thugsense stores its own flags, but we mirror state here)
+local Tracers = { Enabled = false, Duration = 3, StartColor = Color3.fromRGB(255, 85, 0), EndColor = Color3.fromRGB(0, 0, 0), Rainbow = false }
+local Tracer_Delay = false
+local function DrawBulletTracer(EndPos)
+    if Tracer_Delay then return end
+    Tracer_Delay = true
+    pcall(function()
+        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if not tool or not tool:FindFirstChild("Handle") then return end
+        
+        local muzzle = tool.Handle:FindFirstChild("GunMuzzlePoint") or tool.Handle:FindFirstChild("GunFirePoint") or tool.Handle
+        local startPos = muzzle:IsA("Attachment") and muzzle.WorldCFrame.Position or muzzle.Position
+        
+        local StartPart = Instance.new("Part")
+        StartPart.Anchored = true; StartPart.Transparency = 1; StartPart.Position = startPos
+        StartPart.Parent = workspace; StartPart.CanCollide = false; StartPart.CanQuery = false; StartPart.CanTouch = false
+
+        local EndPart = Instance.new("Part")
+        EndPart.Anchored = true; EndPart.CanCollide = false; EndPart.Transparency = 1
+        EndPart.Position = EndPos; EndPart.Parent = workspace; EndPart.CanQuery = false; EndPart.CanTouch = false
+
+        local Attachment1 = Instance.new("Attachment", StartPart)
+        local Attachment2 = Instance.new("Attachment", EndPart)
+        local Beam = Instance.new("Beam", StartPart)
+        Beam.Attachment0 = Attachment1; Beam.Attachment1 = Attachment2
+        Beam.FaceCamera = true; Beam.LightEmission = 1; Beam.LightInfluence = 0
+        Beam.Width0 = 0.05; Beam.Width1 = 0.05
+
+        if Tracers.Rainbow then
+            task.spawn(function()
+                while Beam and Beam.Parent do
+                    local Hue = tick() % 5 / 5
+                    local NextHue = (Hue + 0.1) % 1
+                    Beam.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromHSV(Hue, 1, 1)), ColorSequenceKeypoint.new(1, Color3.fromHSV(NextHue, 1, 1)) })
+                    task.wait(0.05)
+                end
+            end)
+        else
+            Beam.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Tracers.StartColor), ColorSequenceKeypoint.new(1, Tracers.EndColor) })
+        end
+
+        task.delay(Tracers.Duration, function()
+            StartPart:Destroy()
+            EndPart:Destroy()
+        end)
+    end)
+    task.spawn(function() task.wait(0.05); Tracer_Delay = false end)
+end
 
 local flags = {}
 local function setFlag(name, value)
@@ -250,13 +297,13 @@ local function GetNearestCar(hrp)
     local nearestCar = nil
     local nearestDist = math.huge
     for _, car in ipairs(CivCars:GetChildren()) do
-        if not car:IsA("Model") then continue end
+        if not car:IsA("Model") then break end
         local seat = car:FindFirstChild("DriveSeat") or car:FindFirstChildWhichIsA("VehicleSeat")
-        if not seat or seat.Occupant then continue end
+        if not seat or seat.Occupant then break end
         if not car.PrimaryPart then
             car.PrimaryPart = car:FindFirstChildWhichIsA("BasePart")
         end
-        if not car.PrimaryPart then continue end
+        if not car.PrimaryPart then break end
         local dist = (car.PrimaryPart.Position - hrp.Position).Magnitude
         if dist < nearestDist then
             nearestDist = dist
@@ -483,8 +530,8 @@ end
 task.spawn(function()
     while true do
         task.wait(0.1)
-        if not AutoDupeCurrentItem then continue end
-        if not DupeToolName or DupeToolName == "nil" then continue end
+        if not AutoDupeCurrentItem then break end
+        if not DupeToolName or DupeToolName == "nil" then break end
         if not DupeCooldown then duplicateCurrentItem() end
     end
 end)
@@ -723,7 +770,7 @@ local function startDumpsterAutofarm()
                 end
             end
             for _, entry in ipairs(dumpsters) do
-                if not dumpsterIsRunning then continue end
+                if not dumpsterIsRunning then break end
                 if entry.part and entry.prompt and entry.part:IsDescendantOf(workspace) then
                     SafeTeleportTo(CFrame.new(entry.part.Position + Vector3.new(0, 3, 0)))
                     task.wait(0.6)
@@ -1033,12 +1080,12 @@ end)
 
 task.spawn(function()
     while task.wait() do
-        if not PlayerUtilities.BugPlayer then continue end
+        if not PlayerUtilities.BugPlayer then break end
         local target = getSelectedPlayer(flags["MainSelectPlayer"])
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
-        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
+        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
         local car = getAvailableVehicle()
-        if not car or not car:FindFirstChild("DriveSeat") or car.DriveSeat.Occupant then continue end
+        if not car or not car:FindFirstChild("DriveSeat") or car.DriveSeat.Occupant then break end
         if not car:GetAttribute("Usable") or car:GetAttribute("Usable") == false then
             car.DriveSeat:Sit(LocalPlayer.Character.Humanoid)
             car:SetAttribute("Usable", true)
@@ -1057,27 +1104,27 @@ end)
 
 task.spawn(function()
     while task.wait(1) do
-        if not PlayerUtilities.AutoKill then continue end
+        if not PlayerUtilities.AutoKill then break end
         local target = getSelectedPlayer(flags["MainSelectPlayer"])
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
-        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
+        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
         local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
-        if not tool or not tool:FindFirstChild("GunScript_Local") then continue end
-        if target.Character.Humanoid.Health == 0 or target.Character:FindFirstChildOfClass("ForceField") then continue end
+        if not tool or not tool:FindFirstChild("GunScript_Local") then break end
+        if target.Character.Humanoid.Health == 0 or target.Character:FindFirstChildOfClass("ForceField") then break end
         killGun(target.Name, "Head", math.huge)
     end
 end)
 
 task.spawn(function()
     while task.wait(2) do
-        if not PlayerUtilities.AutoRagdoll then continue end
+        if not PlayerUtilities.AutoRagdoll then break end
         local target = getSelectedPlayer(flags["MainSelectPlayer"])
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
-        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
+        if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
         local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
-        if not tool or not tool:FindFirstChild("GunScript_Local") then continue end
-        if target.Character.Humanoid.Health == 0 then continue end
-        if target.Character.Humanoid:GetState() == Enum.HumanoidStateType.Physics then continue end
+        if not tool or not tool:FindFirstChild("GunScript_Local") then break end
+        if target.Character.Humanoid.Health == 0 then break end
+        if target.Character.Humanoid:GetState() == Enum.HumanoidStateType.Physics then break end
         killGun(target.Name, "RightUpperLeg", 0.01)
     end
 end)
@@ -1086,8 +1133,8 @@ task.spawn(function()
     while task.wait() do
         if not PlayerUtilities.BringingNearestPlayer then break end
         local target = getNearestPlayer()
-        if not target or target == LocalPlayer then continue end
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not target or target == LocalPlayer then break end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
         if not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
         target.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(2, 0, 0)
     end
@@ -1095,10 +1142,10 @@ end)
 
 task.spawn(function()
     while task.wait() do
-        if not PlayerUtilities.BringingPlayer then continue end
+        if not PlayerUtilities.BringingPlayer then break end
         local target = getSelectedPlayer(flags["MainSelectPlayer"])
-        if not target or target == LocalPlayer then continue end
-        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then continue end
+        if not target or target == LocalPlayer then break end
+        if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
         if not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then break end
         target.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(2, 0, 0)
     end
@@ -1269,16 +1316,16 @@ local AutoStealLootbagsLoop = task.spawn(function()
             local storage = workspace:FindFirstChild("Storage")
             if not storage then break end
             for _, item in ipairs(storage:GetChildren()) do
-                if not AutoStealLootbags then continue end
+                if not AutoStealLootbags then break end
                 local prompt = item:FindFirstChild("stealprompt", true)
                 if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
                     local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                     local root = character:FindFirstChild("HumanoidRootPart")
-                    if not root then continue end
+                    if not root then break end
                     local oldCFrame = root.CFrame
                     getgenv().SwimMethod = true; task.wait(0.3)
                     local targetPart = prompt.Parent:IsA("BasePart") and prompt.Parent or item:FindFirstChildWhichIsA("BasePart", true)
-                    if not targetPart then continue end
+                    if not targetPart then break end
                     root.CFrame = targetPart.CFrame + Vector3.new(0, 2, 0); task.wait(0.3)
                     fireproximityprompt(prompt); task.wait(0.3)
                     root.CFrame = oldCFrame; task.wait(0.5)
@@ -1519,11 +1566,11 @@ local function GetClosestPlayerToMouseSilent()
     local mousePos = GetMousePosition()
     local radius = Silent.UseFieldOfView and Silent.Radius or math.huge
     for _, player in ipairs(Players:GetPlayers()) do
-        if not isValidCombatPlayer(player) then continue end
+        if not isValidCombatPlayer(player) then break end
         local head = player.Character:FindFirstChild("Head")
         if not head then break end
         local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-        if not onScreen then continue end
+        if not onScreen then break end
         local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
         if distance > radius then break end
         if distance < bestDistance then bestDistance = distance; bestTarget = player end
@@ -1545,15 +1592,15 @@ local function GetClosestPlayerToMouseAimbot()
     local mousePos = GetMousePosition()
     local radius = Aimlock.UseFieldOfView and Aimlock.Radius or 9e9
     for _, player in ipairs(Players:GetPlayers()) do
-        if not isValidCombatPlayer(player) then continue end
+        if not isValidCombatPlayer(player) then break end
         local targetPart = player.Character:FindFirstChild(Aimlock.TargetPart)
-        if not targetPart then continue end
+        if not targetPart then break end
         local root = player.Character:FindFirstChild("HumanoidRootPart")
-        if not root then continue end
-        if (root.Position - Camera.CFrame.Position).Magnitude > Aimlock.MaxDistance then continue end
-        if Aimlock.WallCheck and not wallCheckCharacter(player.Character) then continue end
+        if not root then break end
+        if (root.Position - Camera.CFrame.Position).Magnitude > Aimlock.MaxDistance then break end
+        if Aimlock.WallCheck and not wallCheckCharacter(player.Character) then break end
         local screenPoint, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-        if not onScreen then continue end
+        if not onScreen then break end
         local magnitude = (Vector2.new(screenPoint.X, screenPoint.Y) - mousePos).Magnitude
         if magnitude <= radius and magnitude < bestDistance then bestDistance = magnitude; bestTarget = player end
     end
@@ -1826,13 +1873,13 @@ task.spawn(function()
             local dollas = workspace:FindFirstChild("Dollas")
             if not dollas then break end
             for _, item in ipairs(dollas:GetChildren()) do
-                if not AutoGrabMoney then continue end
+                if not AutoGrabMoney then break end
                 if (item.Name == "DeadMoney" or item.Name == "Money") and item:IsA("BasePart") then
                     local prompt = item:FindFirstChildWhichIsA("ProximityPrompt", true)
                     if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
                         local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                         local root = character:FindFirstChild("HumanoidRootPart")
-                        if not root then continue end
+                        if not root then break end
                         local oldCFrame = root.CFrame
                         getgenv().SwimMethod = true; task.wait(0.3)
                         root.CFrame = item.CFrame + Vector3.new(0, 2, 0); task.wait(0.3)
@@ -2382,6 +2429,10 @@ end
 -- VISUALS TAB
 -- ============================================================================
 do
+    local TracersSection = VisualsTab:Section({Name = "Bullet Tracers", Side = 2})
+    TracersSection:Toggle({Name = "Enable Tracers", Flag = "TracersEnabled", Default = false, Callback = function(state) Tracers.Enabled = state end})
+    TracersSection:Toggle({Name = "Rainbow Tracers", Flag = "TracersRainbow", Default = false, Callback = function(state) Tracers.Rainbow = state end})
+    TracersSection:Slider({Name = "Tracer Duration", Flag = "TracerDuration", Min = 0.5, Max = 10, Default = 3, Callback = function(val) Tracers.Duration = val end})
 SkySection = VisualsTab:Section({Name = "World Visuals", Side = 2})
     SkySection:Toggle({Name = "Enable Saturation", Flag = "SatEnabled", Default = false, Callback = function(state) WorldVisuals.SaturationEnabled = state end})
     SkySection:Slider({Name = "Saturation Value", Flag = "SatValue", Min = 0, Max = 200, Default = 50, Callback = function(val) WorldVisuals.SaturationValue = val/100 end})
