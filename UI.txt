@@ -1,5 +1,6 @@
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/sametexe001/sametlibs/refs/heads/main/Thugsense/Library.lua"))()
 
+-- Inject the purple theme colors BEFORE creating the window
 if Library.Theme then
     Library.Theme.Accent = Color3.fromRGB(143, 0, 255)
     Library.Theme.Background = Color3.fromRGB(15, 15, 15)
@@ -19,6 +20,12 @@ local KeybindList = Library:KeybindList()
 Watermark:SetVisibility(false)
 KeybindList:SetVisibility(false)
 
+local MainTab = Window:Page({Name = "Main", Columns = 2, Subtabs = false})
+local FarmingTab = Window:Page({Name = "Farming", Columns = 2, Subtabs = false})
+local PlayerTab = Window:Page({Name = "Player", Columns = 2, Subtabs = false})
+local VisualsTab = Window:Page({Name = "Visuals", Columns = 2, Subtabs = false})
+local SettingsTab = Library:CreateSettingsPage(Window, Watermark, KeybindList)
+
 for _, page in ipairs(Window.Pages) do
     page.Turn = function(self, Bool)
         if self.Active == Bool then return end
@@ -37,130 +44,528 @@ for _, page in ipairs(Window.Pages) do
     end
 end
 
-local PlayerTab = Window:Page({Name = "Player", Columns = 2, Subtabs = false})
-local MainTab = Window:Page({Name = "Main", Columns = 2, Subtabs = false})
-local FarmingTab = Window:Page({Name = "Farming", Columns = 2, Subtabs = false})
-local AimingTab = Window:Page({Name = "Aiming", Columns = 2, Subtabs = false})
-local VisualsTab = Window:Page({Name = "Visuals", Columns = 2, Subtabs = false})
-local SettingsTab = Library:CreateSettingsPage(Window, Watermark, KeybindList)
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local flags = {}
+
+local dumpsterIsRunning = false
+local dumpsterTask = nil
+local constructionRunning = false
+local constructionThread = nil
+local StudioMoneyNotifyEnabled = false
+local StudioMoneyNotifyConnections = {}
+local AutoStealLootbags = false
+local AutoPickupBags = false
+local AutoCleanMoney = false
+local AutoGrabMoney = false
+local promptConnections = {}
+local promptAddedConnection = nil
+
+local function sendNotification(title, text)
+    pcall(function() game:GetService("StarterGui"):SetCore("SendNotification", { Title = title, Text = text, Duration = 5 }) end)
+end
+local function notifyToggle(name, enabled) sendNotification(name, name .. (enabled and " enabled" or " disabled")) end
+
+
+
+local function SafeTeleportTo(targetCFrame)
+    Config:Teleport(targetCFrame)
+end
+
+local function startDumpsterAutofarm()
+    if dumpsterTask then return end
+    dumpsterIsRunning = true
+    dumpsterTask = task.spawn(function()
+        while dumpsterIsRunning do
+            local dumpsters = {}
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("Part") and v.Name == "DumpsterPromt" then
+                    local prompt = v:FindFirstChildWhichIsA("ProximityPrompt")
+                    if prompt then table.insert(dumpsters, { part = v, prompt = prompt }) end
+                end
+            end
+            for _, entry in ipairs(dumpsters) do
+                if not dumpsterIsRunning then continue end
+                if entry.part and entry.prompt and entry.part:IsDescendantOf(workspace) then
+                    SafeTeleportTo(CFrame.new(entry.part.Position + Vector3.new(0, 3, 0)))
+                    task.wait(0.6)
+                    pcall(function() fireproximityprompt(entry.prompt) end)
+                    task.wait(1)
+                end
+            end
+            task.wait(2)
+        end
+        dumpsterTask = nil
+    end)
+    fireRemoteForAllBackpackItems()
+end
+
+local function stopDumpsterAutofarm()
+    dumpsterIsRunning = false
+end
+
+local function interactPrompt(prompt)
+    if fireproximityprompt then fireproximityprompt(prompt)
+    else prompt:InputHoldBegin(); prompt:InputHoldEnd() end
+end
+
+local function startConstructionAutofarm()
+    if constructionThread then return end
+    constructionRunning = true
+    constructionThread = task.spawn(function()
+        while constructionRunning do
+            task.wait(1)
+            pcall(function()
+                if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
+                if not LocalPlayer.Character:FindFirstChild("Humanoid") or LocalPlayer.Character:FindFirstChild("Humanoid").Health == 0 then return end
+
+                if not LocalPlayer:GetAttribute("WorkingJob") then
+                    Config:Teleport(CFrame.new(-1729, 371, -1171))
+                    task.wait(0.4)
+                    fireproximityprompt(workspace.ConstructionStuff["Start Job"].Prompt)
+                    repeat task.wait() until LocalPlayer:GetAttribute("WorkingJob") or not constructionRunning
+                end
+
+                if not LocalPlayer.Backpack:FindFirstChild("PlyWood") and not LocalPlayer.Character:FindFirstChild("PlyWood") then
+                    Config:Teleport(CFrame.new(-1728, 371, -1178))
+                    repeat task.wait() fireproximityprompt(workspace.ConstructionStuff["Grab Wood"].Prompt) until LocalPlayer.Backpack:FindFirstChild("PlyWood") or LocalPlayer.Character:FindFirstChild("PlyWood") or not constructionRunning
+                end
+
+                repeat task.wait() until LocalPlayer.Backpack:FindFirstChild("PlyWood") or LocalPlayer.Character:FindFirstChild("PlyWood") or not constructionRunning
+
+                if LocalPlayer.Backpack:FindFirstChild("PlyWood") then
+                    LocalPlayer.Character.Humanoid:EquipTool(LocalPlayer.Backpack:FindFirstChild("PlyWood"))
+                end
+
+                local targetWood = nil
+                for _, v in pairs(workspace.ConstructionStuff:GetDescendants()) do
+                    if v:IsA("ProximityPrompt") and v.ActionText == "Wall" then
+                        targetWood = v
+                        break
+                    end
+                end
+
+                if targetWood and targetWood.Parent then
+                    Config:Teleport(targetWood.Parent.CFrame + Vector3.new(0, 3, 0))
+                    task.wait(0.4)
+                    fireproximityprompt(targetWood)
+                    task.wait(1)
+                end
+            end)
+        end
+        constructionThread = nil
+    end)
+end
+
+local function stopConstructionAutofarm()
+    constructionRunning = false
+    if constructionThread then task.cancel(constructionThread); constructionThread = nil end
+end
+
+local function refreshPrompts(enableInstant)
+    for _, prompt in ipairs(workspace:GetDescendants()) do
+        if prompt:IsA("ProximityPrompt") then setupPrompt(prompt, enableInstant) end
+    end
+    if promptAddedConnection then promptAddedConnection:Disconnect(); promptAddedConnection = nil end
+    if enableInstant then
+        promptAddedConnection = workspace.DescendantAdded:Connect(function(descendant)
+            if descendant:IsA("ProximityPrompt") then setupPrompt(descendant, true) end
+        end)
+    end
+end
+
+local function watchStudioPayPrompt(studioPayName)
+    local studioPay = workspace:FindFirstChild("StudioPay")
+    if not studioPay then return end
+    local moneyFolder = studioPay:FindFirstChild("Money")
+    if not moneyFolder then return end
+    local part = moneyFolder:FindFirstChild(studioPayName)
+    if not part then return end
+    local prompt = part:FindFirstChild("Prompt")
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    local conn = prompt:GetPropertyChangedSignal("Enabled"):Connect(function()
+        if not StudioMoneyNotifyEnabled then return end
+        if prompt.Enabled then sendNotification("Studio Money Restocked", "Money in studio restocked.")
+        else sendNotification("Studio Money Stolen", "1 money in studio just got stolen!") end
+    end)
+    table.insert(StudioMoneyNotifyConnections, conn)
+end
+
+local function cleanupStudioMoneyNotify()
+    for _, conn in ipairs(StudioMoneyNotifyConnections) do if conn and conn.Disconnect then conn:Disconnect() end end
+    StudioMoneyNotifyConnections = {}
+end
+
+local function findHouseModels()
+    local found = {}
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") or v:IsA("Folder") then
+            local n = v.Name:lower()
+            if n:find("house") and not n:find("pent") and not n:find("ware") then
+                if v:FindFirstChildWhichIsA("ProximityPrompt", true) then table.insert(found, v) end
+            end
+        end
+    end
+    table.sort(found, function(a, b) return a.Name:lower() < b.Name:lower() end)
+    return found
+end
+
+local function lootHouse(houseFolder)
+    if not houseFolder then return end
+    for _, item in pairs(houseFolder:GetDescendants()) do
+        if item:IsA("ProximityPrompt") and item.Enabled then
+            local part = item.Parent
+            if part and part:IsA("BasePart") then
+                Config:Teleport(part.CFrame + Vector3.new(0, 3, 0)); task.wait(0.2)
+                pcall(function() fireproximityprompt(item) end); task.wait(0.25)
+            end
+        end
+    end
+end
+
+local function GetPlayerMoneyAmount()
+    local pl = Players.LocalPlayer
+    if not pl then return nil end
+    local leader = pl:FindFirstChild("leaderstats") or pl:FindFirstChild("Leaderstats") or pl:FindFirstChild("stats")
+    if leader then
+        for _, name in ipairs({"Money","Cash","Bank","Coins","Wallet"}) do
+            local val = leader:FindFirstChild(name)
+            if val and type(val.Value) == "number" then return val.Value end
+        end
+    end
+    if pl.GetAttribute then
+        local a = pl:GetAttribute("Money") or pl:GetAttribute("Cash") or pl:GetAttribute("Coins")
+        if a and tonumber(a) then return tonumber(a) end
+    end
+    return nil
+end
+
+local function autoDepositAmount(amount)
+    pcall(function()
+        local BankAction = game:GetService("ReplicatedStorage"):FindFirstChild("BankAction")
+        if not BankAction then return end
+        if amount and tonumber(amount) and tonumber(amount) > 0 then
+            BankAction:FireServer("depo", tostring(math.floor(amount)))
+        else
+            BankAction:FireServer("depo", tostring(999999999))
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        if getgenv().StudioPayFarm then
+            local StudioPayFolder = workspace:FindFirstChild("StudioPay") and workspace.StudioPay:FindFirstChild("Money")
+            if StudioPayFolder then
+                local enabledPrompts = {}
+                for _, studioPayModel in pairs(StudioPayFolder:GetChildren()) do
+                    for _, part in pairs(studioPayModel:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            local prompt = part:FindFirstChild("Prompt")
+                            if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                                table.insert(enabledPrompts, {part = part, prompt = prompt})
+                            end
+                        end
+                    end
+                end
+                if #enabledPrompts > 0 then
+                    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                    local root = character:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        local originalPos = root.Position
+                        for _, entry in ipairs(enabledPrompts) do
+                            SafeTeleportTo(CFrame.new(entry.part.Position + Vector3.new(0, 3, 0)))
+                            task.wait(0.2)
+                            interactPrompt(entry.prompt)
+                            task.wait(0.1)
+                        end
+                        SafeTeleportTo(CFrame.new(originalPos))
+                    else
+                        task.wait(3)
+                    end
+                else
+                    task.wait(1)
+                end
+            else
+                task.wait(1)
+            end
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+
+local AutoStealLootbagsLoop = task.spawn(function()
+    while task.wait(1) do
+        if AutoStealLootbags then
+            local storage = workspace:FindFirstChild("Storage")
+            if not storage then continue end
+            for _, item in ipairs(storage:GetChildren()) do
+                if not AutoStealLootbags then continue end
+                local prompt = item:FindFirstChild("stealprompt", true)
+                if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                    local root = character:FindFirstChild("HumanoidRootPart")
+                    if not root then continue end
+                    local oldCFrame = root.CFrame
+                    getgenv().SwimMethod = true; task.wait(0.3)
+                    local targetPart = prompt.Parent:IsA("BasePart") and prompt.Parent or item:FindFirstChildWhichIsA("BasePart", true)
+                    if not targetPart then continue end
+                    root.CFrame = targetPart.CFrame + Vector3.new(0, 2, 0); task.wait(0.3)
+                    fireproximityprompt(prompt); task.wait(0.3)
+                    root.CFrame = oldCFrame; task.wait(0.5)
+                    getgenv().SwimMethod = false
+                end
+            end
+        end
+    end
+end)
+
+
+-- ========== LOOT / HEIST LOOPS ==========
+getgenv().AutoLootStudio = false
+task.spawn(function()
+    while task.wait(0.5) do
+        if getgenv().AutoLootStudio then
+            local StudioPayFolder = workspace:FindFirstChild("StudioPay") and workspace.StudioPay:FindFirstChild("Money")
+            if StudioPayFolder then
+                for _, model in pairs(StudioPayFolder:GetChildren()) do
+                    for _, part in pairs(model:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            local prompt = part:FindFirstChild("Prompt")
+                            if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                                Config:Teleport(part.CFrame + Vector3.new(0, 3, 0)); task.wait(0.2)
+                                pcall(function() fireproximityprompt(prompt) end); task.wait(0.1)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+getgenv().AutoLootHouse1 = false
+getgenv().AutoLootHouse2 = false
+local function findHouseModels()
+    local found = {}
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") or v:IsA("Folder") then
+            local n = v.Name:lower()
+            if n:find("house") and not n:find("pent") and not n:find("ware") then
+                if v:FindFirstChildWhichIsA("ProximityPrompt", true) then table.insert(found, v) end
+            end
+        end
+    end
+    table.sort(found, function(a, b) return a.Name:lower() < b.Name:lower() end)
+    return found
+end
+local function lootHouse(houseFolder)
+    if not houseFolder then return end
+    for _, item in pairs(houseFolder:GetDescendants()) do
+        if item:IsA("ProximityPrompt") and item.Enabled then
+            local part = item.Parent
+            if part and part:IsA("BasePart") then
+                Config:Teleport(part.CFrame + Vector3.new(0, 3, 0)); task.wait(0.2)
+                pcall(function() fireproximityprompt(item) end); task.wait(0.25)
+            end
+        end
+    end
+end
+task.spawn(function()
+    while task.wait(1) do
+        if getgenv().AutoLootHouse1 or getgenv().AutoLootHouse2 then
+            local houses = findHouseModels()
+            if getgenv().AutoLootHouse1 and houses[1] then pcall(function() lootHouse(houses[1]) end) end
+            if getgenv().AutoLootHouse2 and houses[2] then pcall(function() lootHouse(houses[2]) end) end
+        end
+    end
+end)
+
+getgenv().AutoLootTrash = false
+task.spawn(function()
+    while task.wait(0.5) do
+        if getgenv().AutoLootTrash then
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("Part") and (v.Name:lower():find("trash") or v.Name:lower():find("dumpster")) then
+                    local prompt = v:FindFirstChildWhichIsA("ProximityPrompt", true)
+                    if prompt and prompt.Enabled then
+                        Config:Teleport(v.CFrame + Vector3.new(0, 3, 0)); task.wait(0.3)
+                        pcall(function() fireproximityprompt(prompt) end); task.wait(0.5)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+getgenv().AutoSellLoot = false
+task.spawn(function()
+    while task.wait(1) do
+        if getgenv().AutoSellLoot then
+            pcall(function()
+                local pawnRemote = ReplicatedStorage:FindFirstChild("PawnRemote")
+                if pawnRemote then for _, item in pairs(LocalPlayer.Backpack:GetChildren()) do pawnRemote:FireServer(item.Name) end end
+            end)
+        end
+    end
+end)
+
+getgenv().AutoRobBank = false
+task.spawn(function()
+    while task.wait(0.5) do
+        if getgenv().AutoRobBank then
+            pcall(function()
+                for _, v in pairs(workspace:GetDescendants()) do
+                    if v:IsA("ProximityPrompt") and v.Enabled and (v.ActionText:lower():find("rob") or v.ActionText:lower():find("crack") or v.ActionText:lower():find("drill")) then
+                        Config:Teleport(v.Parent.CFrame + Vector3.new(0, 3, 0)); task.wait(0.2)
+                        fireproximityprompt(v); task.wait(0.3)
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+getgenv().AutoRobStore = false
+task.spawn(function()
+    while task.wait(0.5) do
+        if getgenv().AutoRobStore then
+            pcall(function()
+                local selectedStore = flags["TargetStoreSelect"] or "Store1"
+                local storeModel = workspace:FindFirstChild(selectedStore) or (workspace:FindFirstChild("Stores") and workspace.Stores:FindFirstChild(selectedStore))
+                if storeModel then
+                    for _, v in pairs(storeModel:GetDescendants()) do
+                        if v:IsA("ProximityPrompt") and v.Enabled and (v.ActionText:lower():find("rob") or v.ActionText:lower():find("steal") or v.ActionText:lower():find("register")) then
+                            Config:Teleport(v.Parent.CFrame + Vector3.new(0, 3, 0)); task.wait(0.2)
+                            fireproximityprompt(v); task.wait(0.3)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- ========== AUTO GRAB DROPPED CASH ==========
+task.spawn(function()
+    while task.wait(1) do
+        if AutoGrabMoney then
+            local dollas = workspace:FindFirstChild("Dollas")
+            if not dollas then continue end
+            for _, item in ipairs(dollas:GetChildren()) do
+                if not AutoGrabMoney then continue end
+                if (item.Name == "DeadMoney" or item.Name == "Money") and item:IsA("BasePart") then
+                    local prompt = item:FindFirstChildWhichIsA("ProximityPrompt", true)
+                    if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                        local root = character:FindFirstChild("HumanoidRootPart")
+                        if not root then continue end
+                        local oldCFrame = root.CFrame
+                        getgenv().SwimMethod = true; task.wait(0.3)
+                        root.CFrame = item.CFrame + Vector3.new(0, 2, 0); task.wait(0.3)
+                        fireproximityprompt(prompt); task.wait(0.3)
+                        if AutoCleanMoney then local amt = GetPlayerMoneyAmount(); autoDepositAmount(amt) end
+                        root.CFrame = oldCFrame; task.wait(0.5)
+                        getgenv().SwimMethod = false
+                    end
+                end
+            end
+        end
+    end
+end)
+
+
+
+
+
+
+local WeaponMods = { HitboxSize = 1, InfiniteAmmo = false, InfiniteClips = false, Bullets80k = false, ModifyRecoilValue = false, ModifySpreadValue = false, DisableJamming = false, InstantReload = false, InstantEquip = false, ModifyFireRate = false, Automatic = false, DamageAmplified = false, SpoofAccuracy = false, HitboxExpander = false, HitboxVisible = false, Hitmarkers = false, ReloadSpeed = 0.2, EquipSpeed = 0.2 }
+local GunOriginalColors = {}
+local GunChams = false
+local RainbowGun = false
+
+local function getEquippedGunSetting()
+    local character = LocalPlayer.Character
+    if not character then return nil, nil end
+    local tool = character:FindFirstChildOfClass("Tool")
+    if not tool or not tool:FindFirstChild("Setting") then return nil, nil end
+    local ok, settings = pcall(require, tool.Setting)
+    if ok and type(settings) == "table" then return tool, settings end
+    return nil, nil
+end
+
+local function applyAllWeaponMods()
+    local tool, settings = getEquippedGunSetting()
+    if not settings then return end
+    pcall(function()
+        if WeaponMods.InfiniteAmmo then settings.Ammo = 99999; settings.AmmoPerMag = 99999; settings.LimitedAmmoEnabled = false end
+        if WeaponMods.InfiniteClips then settings.Ammo = 80000; settings.AmmoPerMag = 80000; settings.LimitedAmmoEnabled = false end
+        if WeaponMods.Bullets80k then
+            settings.Ammo = 80000; settings.AmmoPerMag = 80000; settings.LimitedAmmoEnabled = false
+            local gunLocal = tool:FindFirstChild("GunScript_Local")
+            if gunLocal and type(getsenv) == "function" then
+                pcall(function()
+                    local env = getsenv(gunLocal)
+                    if env and type(env.Reload) == "function" and type(debug.setupvalue) == "function" then
+                        debug.setupvalue(env.Reload, 1, 80000); debug.setupvalue(env.Reload, 3, 80000)
+                    end
+                end)
+            end
+        end
+        if WeaponMods.ModifyRecoilValue then settings.Recoil = 0; settings.CameraRecoilingEnabled = false end
+        if WeaponMods.ModifySpreadValue then settings.Spread = 0; settings.SpreadX = 0; settings.SpreadY = 0; settings.Accuracy = 1 end
+        if WeaponMods.DisableJamming then settings.JamChance = 0 end
+        if WeaponMods.InstantReload then settings.ReloadTime = WeaponMods.ReloadSpeed or 0.1 end
+        if WeaponMods.InstantEquip then settings.EquipTime = WeaponMods.EquipSpeed or 0.1; settings.EquippingTime = WeaponMods.EquipSpeed or 0.1 end
+        if WeaponMods.ModifyFireRate then settings.FireRate = 0 end
+        if WeaponMods.Automatic then settings.Auto = true end
+        if WeaponMods.DamageAmplified then settings.BaseDamage = 10000 end
+        if WeaponMods.SpoofAccuracy then settings.Accuracy = 1 end
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(character)
+    character.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then task.defer(applyAllWeaponMods) end
+    end)
+end)
+if LocalPlayer.Character then
+    LocalPlayer.Character.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then task.defer(applyAllWeaponMods) end
+    end)
+end
 
 -- ============================================================================
--- PLAYER TAB
+-- PLAYER TAB UI
 -- ============================================================================
-local CharacterSection = PlayerTab:Section({Name = "Character", Side = 1})
-CharacterSection:Slider({Name = "Fly Speed", Flag = "MainFlySpeed", Min = 1, Max = 20, Default = 5, Callback = function() end})
-CharacterSection:Toggle({Name = "Enable Fly", Flag = "MainEnableFly", Default = false, Callback = function() end})
-CharacterSection:Toggle({Name = "Speed Boost", Flag = "SpeedBoost", Default = false, Callback = function() end})
-CharacterSection:Toggle({Name = "Jump Boost", Flag = "JumpBoost", Default = false, Callback = function() end})
-CharacterSection:Toggle({Name = "Infinite Jump", Flag = "InfiniteJump", Default = false, Callback = function() end})
-CharacterSection:Toggle({Name = "Noclip", Flag = "Noclip", Default = false, Callback = function() end})
+local GunModsSection = PlayerTab:Section({Name = "Weapon Modifications", Side = 1})
+local function bindWeaponToggle(name, key, flag)
+    GunModsSection:Toggle({Name = name, Flag = flag, Default = false, Callback = function(state) WeaponMods[key] = state; applyAllWeaponMods() end})
+end
+bindWeaponToggle("Infinite Ammo", "InfiniteAmmo", "WM_InfiniteAmmo")
+bindWeaponToggle("Infinite Mag", "InfiniteClips", "WM_InfiniteClips")
+bindWeaponToggle("80k Bullets", "Bullets80k", "WM_Bullets80k")
+bindWeaponToggle("No Recoil", "ModifyRecoilValue", "WM_NoRecoil")
+bindWeaponToggle("No Spread", "ModifySpreadValue", "WM_NoSpread")
+bindWeaponToggle("No Jam", "DisableJamming", "WM_NoJam")
+bindWeaponToggle("Instant Reload", "InstantReload", "WM_InstantReload")
+bindWeaponToggle("Instant Equip", "InstantEquip", "WM_InstantEquip")
+bindWeaponToggle("Full Auto", "Automatic", "WM_FullAuto")
+bindWeaponToggle("Fast Fire Rate", "ModifyFireRate", "WM_FastFireRate")
+bindWeaponToggle("One Tap Damage", "DamageAmplified", "WM_OneTapDamage")
+bindWeaponToggle("Spoof Accuracy", "SpoofAccuracy", "WM_SpoofAccuracy")
 
-local SurvivalSection = PlayerTab:Section({Name = "Survival", Side = 2})
-SurvivalSection:Toggle({Name = "Anti AFK (20 Min)", Flag = "AntiAFK", Default = true, Callback = function() end})
-SurvivalSection:Toggle({Name = "Anti Fall Damage", Flag = "AntiFallDamage", Default = false, Callback = function() end})
-SurvivalSection:Toggle({Name = "Anti Jump Cooldown", Flag = "AntiJumpCooldown", Default = false, Callback = function() end})
-SurvivalSection:Toggle({Name = "Infinite Sleep", Flag = "InfiniteSleep", Default = false, Callback = function() end})
-SurvivalSection:Toggle({Name = "Infinite Hunger", Flag = "InfiniteHunger", Default = false, Callback = function() end})
-SurvivalSection:Toggle({Name = "Infinite Stamina", Flag = "InfiniteStamina", Default = false, Callback = function() end})
-SurvivalSection:Toggle({Name = "No Rent Pay", Flag = "NoRentPay", Default = false, Callback = function() end})
-SurvivalSection:Toggle({Name = "Bypass Locked Cars", Flag = "BypassLockedCars", Default = false, Callback = function() end})
-
-local GunModsSection = PlayerTab:Section({Name = "Gun Modifications", Side = 1})
-GunModsSection:Toggle({Name = "Infinite Ammo", Flag = "WM_InfiniteAmmo", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Infinite Mag", Flag = "WM_InfiniteClips", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "80k Bullets", Flag = "WM_Bullets80k", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "No Recoil", Flag = "WM_NoRecoil", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "No Spread", Flag = "WM_NoSpread", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "No Jam", Flag = "WM_NoJam", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Instant Reload", Flag = "WM_InstantReload", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Instant Equip", Flag = "WM_InstantEquip", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Full Auto", Flag = "WM_FullAuto", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Fast Fire Rate", Flag = "WM_FastFireRate", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "One Tap Damage", Flag = "WM_OneTapDamage", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Spoof Accuracy", Flag = "WM_SpoofAccuracy", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Bullet Hitbox Expander", Flag = "WM_HitboxExpander", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Bullet Hitbox Visible", Flag = "WM_HitboxVisible", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Bullet Hitmarkers", Flag = "WM_Hitmarkers", Default = false, Callback = function() end})
-GunModsSection:Slider({Name = "Reload Speed", Flag = "WM_ReloadSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function() end})
-GunModsSection:Slider({Name = "Equip Speed", Flag = "WM_EquipSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function() end})
-GunModsSection:Slider({Name = "Bullet Hitbox Size", Flag = "WM_HitboxSize", Min = 1, Max = 10, Default = 1, Callback = function() end})
-GunModsSection:Toggle({Name = "Enable Gun Color", Flag = "WM_GunColor", Default = false, Callback = function() end})
-GunModsSection:Toggle({Name = "Rainbow Gun Color", Flag = "WM_GunRainbow", Default = false, Callback = function() end})
-
-local VehicleSection = PlayerTab:Section({Name = "Vehicle Settings", Side = 2})
-VehicleSection:Toggle({Name = "Car Fly", Flag = "CarFlyEnabled", Default = false, Callback = function() end})
-VehicleSection:Slider({Name = "Car Fly Speed", Flag = "CarFlySpeed", Min = 50, Max = 300, Default = 150, Callback = function() end})
-VehicleSection:Toggle({Name = "Vehicle Speed Boost", Flag = "VehSpeedEnabled", Default = false, Callback = function() end})
-VehicleSection:Slider({Name = "Speed Multiplier", Flag = "VehSpeedValue", Min = 1, Max = 25, Default = 5, Callback = function() end})
-VehicleSection:Toggle({Name = "Vehicle Brakes", Flag = "VehBreakEnabled", Default = false, Callback = function() end})
-VehicleSection:Slider({Name = "Brake Multiplier", Flag = "VehBreakValue", Min = 10, Max = 300, Default = 50, Callback = function() end})
-VehicleSection:Toggle({Name = "Instant Stop (V)", Flag = "VehInstantStop", Default = false, Callback = function() end})
-VehicleSection:Button({Name = "Bring Nearest Car", Callback = function() end})
-
-local EmotesSection = PlayerTab:Section({Name = "Custom Emotes", Side = 2})
-EmotesSection:Button({Name = "Stop Current Emote", Callback = function() end})
-EmotesSection:Dropdown({Name = "Click to Play Emote", Flag = "EmoteChoice", Items = {"Take The L", "Trip Out", "Levitate", "Triple Jump", "Take a Bow", "Takedown", "Triple Backflip", "Head takeoff", "Wave", "Point", "Dance", "Laugh", "Cheer"}, Default = "Take The L", Callback = function() end})
-
-local InterfaceSection = PlayerTab:Section({Name = "User Interfaces", Side = 2})
-InterfaceSection:Dropdown({Name = "Select Interface", Flag = "SelectInterface", Default = "ATM GUI", Items = {"ATM GUI", "PawnShop", "Bank"}, Callback = function() end})
-InterfaceSection:Toggle({Name = "Toggle Interface", Flag = "ToggleInterface", Default = false, Callback = function() end})
-
+local GunModSettings = PlayerTab:Section({Name = "Weapon Settings", Side = 2})
+GunModSettings:Slider({Name = "Reload Speed", Flag = "WM_ReloadSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value) WeaponMods.ReloadSpeed = value; applyAllWeaponMods() end})
+GunModSettings:Slider({Name = "Equip Speed", Flag = "WM_EquipSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value) WeaponMods.EquipSpeed = value; applyAllWeaponMods() end})
 
 -- ============================================================================
--- MAIN TAB
+-- MAIN TAB UI (VISUAL ONLY)
 -- ============================================================================
-local TargetSection = MainTab:Section({Name = "Target", Side = 1})
-TargetSection:Dropdown({Name = "Select Player", Flag = "MainSelectPlayer", Default = "Player1", Items = {"Player1", "Player2"}, Callback = function() end})
-TargetSection:Toggle({Name = "Anti-Cooldown Fists", Flag = "AntiCooldownFists", Default = false, Callback = function() end})
-TargetSection:Label({Name = "[Enter target username]", Alignment = "Left"})
-TargetSection:Textbox({Name = "[Enter username]", Flag = "TargetUsername", Callback = function() end})
-TargetSection:Toggle({Name = "Spectate", Flag = "Spectate", Default = false, Callback = function() end})
-TargetSection:Toggle({Name = "Bring Nearest Player", Flag = "BringNearestPlayer", Default = false, Callback = function() end})
-TargetSection:Toggle({Name = "Bring Player", Flag = "MainBringPlayer", Default = false, Callback = function() end})
-TargetSection:Toggle({Name = "Bug / Kill Player - Car", Flag = "MainBugPlayer", Default = false, Callback = function() end})
-TargetSection:Toggle({Name = "Auto Kill Player - Gun", Flag = "MainAutoKill", Default = false, Callback = function() end})
-TargetSection:Toggle({Name = "Auto Ragdoll Player - Gun", Flag = "MainAutoRagdoll", Default = false, Callback = function() end})
-TargetSection:Button({Name = "Refresh Player List", Callback = function() end})
-TargetSection:Button({Name = "Teleport To Player", Callback = function() end})
-TargetSection:Button({Name = "Down Player - Hold Gun", Callback = function() end})
-TargetSection:Button({Name = "Kill Player - Hold Gun", Callback = function() end})
-TargetSection:Button({Name = "God Player - Hold Gun", Callback = function() end})
-TargetSection:Button({Name = "Fling Player - Hold Gun", Callback = function() end})
-TargetSection:Button({Name = "Kill All Players - Hold Gun", Callback = function() end})
-
-local DestVehicleSection = MainTab:Section({Name = "Destroy Vehicle", Side = 1})
-DestVehicleSection:Label({Name = "[Vehicle Damage]", Alignment = "Left"})
-DestVehicleSection:Label({Name = "[Damage]", Alignment = "Left"})
-DestVehicleSection:Toggle({Name = "Notify Car", Flag = "NotifyCar", Default = false, Callback = function() end})
-DestVehicleSection:Toggle({Name = "Highlight Car", Flag = "HighlightCar", Default = false, Callback = function() end})
-DestVehicleSection:Button({Name = "Damage All Vehicles", Callback = function() end})
-
-local MiscSection = MainTab:Section({Name = "Misc", Side = 1})
-MiscSection:Label({Name = "[Spam Amount]", Alignment = "Left"})
-MiscSection:Label({Name = "[Number]", Alignment = "Left"})
-MiscSection:Button({Name = "Spam Call Polices", Callback = function() end})
-MiscSection:Button({Name = "Break All Glass", Callback = function() end})
-MiscSection:Toggle({Name = "Anti Camera Shake", Flag = "AntiCameraShake", Default = false, Callback = function() end})
-MiscSection:Toggle({Name = "Instant Revive", Flag = "InstantRevive", Default = false, Callback = function() end})
-
-local ExploitsSection = MainTab:Section({Name = "Exploits", Side = 2})
-ExploitsSection:Label({Name = "How to use the Infinite money", Alignment = "Left"})
-ExploitsSection:Label({Name = "exploit:", Alignment = "Left"})
-ExploitsSection:Label({Name = "", Alignment = "Left"})
-ExploitsSection:Label({Name = "1. Atleast have 2696 cash for", Alignment = "Left"})
-ExploitsSection:Label({Name = "kool aid tools", Alignment = "Left"})
-ExploitsSection:Label({Name = "2. Click the button if you have", Alignment = "Left"})
-ExploitsSection:Label({Name = "the money", Alignment = "Left"})
-ExploitsSection:Label({Name = "3. Wait for the process this can", Alignment = "Left"})
-ExploitsSection:Label({Name = "take time", Alignment = "Left"})
-ExploitsSection:Label({Name = "4. Done", Alignment = "Left"})
-ExploitsSection:Label({Name = "5. This is FE and the money will", Alignment = "Left"})
-ExploitsSection:Label({Name = "save", Alignment = "Left"})
-ExploitsSection:Label({Name = "", Alignment = "Left"})
-ExploitsSection:Label({Name = "Note: There are no limits you can", Alignment = "Left"})
-ExploitsSection:Label({Name = "have as much as you want.", Alignment = "Left"})
-ExploitsSection:Button({Name = "Infinite money vulnerability", Callback = function() end})
-
 local DupeSection = MainTab:Section({Name = "Select Dupe Method", Side = 2})
 DupeSection:Dropdown({Name = "Select Dupe Method", Flag = "DupeMethod", Items = {"Default", "Safe", "Fast"}, Default = "Safe", Callback = function() end})
 DupeSection:Button({Name = "Dupe Tools", Callback = function() end})
@@ -177,12 +582,6 @@ RetreatSection:Toggle({Name = "Auto Pickup Tools", Flag = "AutoPickupTools", Def
 RetreatSection:Toggle({Name = "Steal tools [NEW!]", Flag = "StealTools", Default = false, Callback = function() end})
 
 local GunCheatsSection = MainTab:Section({Name = "GunCheats", Side = 2})
-
-local QuickBuySection = MainTab:Section({Name = "Quick Buy", Side = 1})
-local dummyShopItems = {"Item1", "Item2"}
-QuickBuySection:Dropdown({Name = "Select Item", Flag = "QuickShopItem", Items = dummyShopItems, Default = dummyShopItems[1], Callback = function() end})
-QuickBuySection:Button({Name = "Buy Selected Item", Callback = function() end})
-QuickBuySection:Button({Name = "Refresh Items", Callback = function() end})
 
 local QuickOutfitSection = MainTab:Section({Name = "Quick Outfits", Side = 2})
 QuickOutfitSection:Button({Name = "Spiderman", Callback = function() end})
@@ -209,111 +608,69 @@ MoneySection:Button({Name = "Clean All Filthy Money", Callback = function() end}
 MoneySection:Button({Name = "Generate Max Illegal Money", Callback = function() end})
 MoneySection:Toggle({Name = "Auto Drop 10k", Flag = "AutoDrop10k", Default = false, Callback = function() end})
 
-
 -- ============================================================================
--- FARMING TAB
+-- AUTOFARM TAB UI (FUNCTIONAL)
 -- ============================================================================
 local AutofarmsSection = FarmingTab:Section({Name = "Autofarms", Side = 1})
-AutofarmsSection:Button({Name = "Dumpster Autofarm", Callback = function() end})
-AutofarmsSection:Button({Name = "Studio Autofarm", Callback = function() end})
-AutofarmsSection:Button({Name = "Construction Autofarm", Callback = function() end})
+local dumpsterRunningFlag = false
+AutofarmsSection:Button({Name = "Dumpster Autofarm", Callback = function()
+    if not dumpsterRunningFlag then dumpsterRunningFlag = true; startDumpsterAutofarm(); sendNotification("Autofarm", "Dumpster autofarm started.")
+    else dumpsterRunningFlag = false; stopDumpsterAutofarm(); sendNotification("Autofarm", "Dumpster autofarm stopped.") end
+end})
+AutofarmsSection:Button({Name = "Studio Autofarm", Callback = function()
+    getgenv().StudioPayFarm = not getgenv().StudioPayFarm
+    sendNotification("Autofarm", "Studio autofarm " .. (getgenv().StudioPayFarm and "started." or "stopped."))
+end})
+local constructionRunningFlag = false
+AutofarmsSection:Button({Name = "Construction Autofarm", Callback = function()
+    if not constructionRunningFlag then constructionRunningFlag = true; startConstructionAutofarm(); sendNotification("Autofarm", "Construction autofarm started.")
+    else constructionRunningFlag = false; stopConstructionAutofarm(); sendNotification("Autofarm", "Construction autofarm stopped.") end
+end})
 
 local FarmUtilsSection = FarmingTab:Section({Name = "Farm Utilities", Side = 1})
-FarmUtilsSection:Toggle({Name = "Instant Interaction", Flag = "InstantInteraction", Default = false, Callback = function() end})
-FarmUtilsSection:Toggle({Name = "Studio Money Notify", Flag = "StudioMoneyNotify", Default = false, Callback = function() end})
-FarmUtilsSection:Toggle({Name = "Auto Steal Lootbags", Flag = "AutoStealLootbags", Default = false, Callback = function() end})
-FarmUtilsSection:Toggle({Name = "Auto Pickup Bags", Flag = "AutoPickupBags", Default = false, Callback = function() end})
-FarmUtilsSection:Toggle({Name = "Auto Deposit Picked Cash", Flag = "AutoDepositPickedCash", Default = false, Callback = function() end})
-FarmUtilsSection:Toggle({Name = "Auto Steal Dropped Cash", Flag = "AutoStealDroppedCash", Default = false, Callback = function() end})
+FarmUtilsSection:Toggle({Name = "Instant Interaction", Flag = "InstantInteraction", Default = false, Callback = function(state) refreshPrompts(state); notifyToggle("Instant Interaction", state) end})
+FarmUtilsSection:Toggle({Name = "Studio Money Notify", Flag = "StudioMoneyNotify", Default = false, Callback = function(state)
+    StudioMoneyNotifyEnabled = state; cleanupStudioMoneyNotify()
+    if state then
+        for _, name in ipairs({"StudioPay1", "StudioPay2", "StudioPay3"}) do watchStudioPayPrompt(name) end
+        local moneyFolder = workspace:FindFirstChild("StudioPay") and workspace.StudioPay:FindFirstChild("Money")
+        if moneyFolder then
+            local conn = moneyFolder.ChildAdded:Connect(function(child)
+                if not StudioMoneyNotifyEnabled then return end
+                if child.Name == "StudioPay1" or child.Name == "StudioPay2" or child.Name == "StudioPay3" then watchStudioPayPrompt(child.Name) end
+            end)
+            table.insert(StudioMoneyNotifyConnections, conn)
+        end
+    end
+    notifyToggle("Studio Money Notify", state)
+end})
+FarmUtilsSection:Toggle({Name = "Auto Steal Lootbags", Flag = "AutoStealLootbags", Default = false, Callback = function(state) AutoStealLootbags = state end})
+FarmUtilsSection:Toggle({Name = "Auto Pickup Bags", Flag = "AutoPickupBags", Default = false, Callback = function(state) AutoPickupBags = state end})
+FarmUtilsSection:Toggle({Name = "Auto Deposit Picked Cash", Flag = "AutoDepositPickedCash", Default = false, Callback = function(state) AutoCleanMoney = state end})
+FarmUtilsSection:Toggle({Name = "Auto Steal Dropped Cash", Flag = "AutoStealDroppedCash", Default = false, Callback = function(state) AutoGrabMoney = state end})
 
 local LootSection = FarmingTab:Section({Name = "Auto Loot", Side = 2})
-LootSection:Toggle({Name = "Auto Loot Studio", Flag = "AutoLootStudio", Default = false, Callback = function() end})
-LootSection:Toggle({Name = "Auto Loot House [1]", Flag = "AutoLootHouse1", Default = false, Callback = function() end})
-LootSection:Toggle({Name = "Auto Loot House [2]", Flag = "AutoLootHouse2", Default = false, Callback = function() end})
-LootSection:Toggle({Name = "Auto Loot Trash", Flag = "AutoLootTrash", Default = false, Callback = function() end})
-LootSection:Toggle({Name = "Auto Sell Loot", Flag = "AutoSellLoot", Default = false, Callback = function() end})
+LootSection:Toggle({Name = "Auto Loot Studio", Flag = "AutoLootStudio", Default = false, Callback = function(state) getgenv().AutoLootStudio = state; notifyToggle("Auto Loot Studio", state) end})
+LootSection:Toggle({Name = "Auto Loot House [1]", Flag = "AutoLootHouse1", Default = false, Callback = function(state) getgenv().AutoLootHouse1 = state; notifyToggle("Auto Loot House 1", state) end})
+LootSection:Toggle({Name = "Auto Loot House [2]", Flag = "AutoLootHouse2", Default = false, Callback = function(state) getgenv().AutoLootHouse2 = state; notifyToggle("Auto Loot House 2", state) end})
+LootSection:Toggle({Name = "Auto Loot Trash", Flag = "AutoLootTrash", Default = false, Callback = function(state) getgenv().AutoLootTrash = state; notifyToggle("Auto Loot Trash", state) end})
+LootSection:Toggle({Name = "Auto Sell Loot", Flag = "AutoSellLoot", Default = false, Callback = function(state) getgenv().AutoSellLoot = state; notifyToggle("Auto Sell Loot", state) end})
 
 local HeistSection = FarmingTab:Section({Name = "Heist Tools", Side = 2})
-HeistSection:Dropdown({Name = "Heist Tool", Flag = "HeistToolSelect", Default = "C4", Items = {"C4", "Drill", "Thermite", "Crowbar"}, Callback = function() end})
-HeistSection:Toggle({Name = "Auto Rob Bank", Flag = "AutoRobBank", Default = false, Callback = function() end})
-HeistSection:Dropdown({Name = "Target Store", Flag = "TargetStoreSelect", Default = "Store1", Items = {"Store1", "Store2", "Store3", "DollarGeneral", "McDonalds"}, Callback = function() end})
-HeistSection:Toggle({Name = "Auto Rob Store", Flag = "AutoRobStore", Default = false, Callback = function() end})
-HeistSection:Button({Name = "Auto Grind Construction", Callback = function() end})
+HeistSection:Dropdown({Name = "Heist Tool", Flag = "HeistToolSelect", Default = "C4", Items = {"C4", "Drill", "Thermite", "Crowbar"}, Callback = function(v) flags["HeistToolSelect"] = v end})
+HeistSection:Toggle({Name = "Auto Rob Bank", Flag = "AutoRobBank", Default = false, Callback = function(state) getgenv().AutoRobBank = state; notifyToggle("Auto Rob Bank", state) end})
+HeistSection:Dropdown({Name = "Target Store", Flag = "TargetStoreSelect", Default = "Store1", Items = {"Store1", "Store2", "Store3", "DollarGeneral", "McDonalds"}, Callback = function(v) flags["TargetStoreSelect"] = v end})
+HeistSection:Toggle({Name = "Auto Rob Store", Flag = "AutoRobStore", Default = false, Callback = function(state) getgenv().AutoRobStore = state; notifyToggle("Auto Rob Store", state) end})
+HeistSection:Button({Name = "Auto Grind Construction", Callback = function()
+    if not constructionRunningFlag then constructionRunningFlag = true; startConstructionAutofarm(); sendNotification("Construction", "Auto grind construction started.")
+    else constructionRunningFlag = false; stopConstructionAutofarm(); sendNotification("Construction", "Auto grind construction stopped.") end
+end})
 
-
--- ============================================================================
--- AIMING TAB
--- ============================================================================
-local SilentSection = AimingTab:Section({Name = "Silent Aim", Side = 1})
-SilentSection:Toggle({Name = "Enabled", Flag = "SilentEnabled", Default = false, Callback = function() end})
-SilentSection:Toggle({Name = "Visible Check", Flag = "SilentWallCheck", Default = false, Callback = function() end})
-SilentSection:Dropdown({Name = "Target Parts", Flag = "SilentTargetParts", Default = "Head", Items = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart", "LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg"}, Callback = function() end})
-SilentSection:Slider({Name = "Hit Chance", Flag = "SilentHitChance", Min = 0, Max = 100, Default = 100, Callback = function() end})
-SilentSection:Toggle({Name = "Bullet Penetration (Wallbang)", Flag = "SilentWallBang", Default = false, Callback = function() end})
-
-local SilentFOVSection = AimingTab:Section({Name = "Silent Aim FOV", Side = 2})
-SilentFOVSection:Toggle({Name = "Use FOV", Flag = "SilentUseFOV", Default = false, Callback = function() end})
-SilentFOVSection:Toggle({Name = "Draw FOV Circle", Flag = "SilentDrawFOV", Default = false, Callback = function() end})
-SilentFOVSection:Slider({Name = "FOV Radius", Flag = "SilentFOVRadius", Min = 0, Max = 1000, Default = 100, Callback = function() end})
-SilentFOVSection:Slider({Name = "FOV Sides", Flag = "SilentFOVSides", Min = 3, Max = 100, Default = 25, Callback = function() end})
-
-local SilentSnaplineSection = AimingTab:Section({Name = "Silent Aim Snapline", Side = 2})
-SilentSnaplineSection:Toggle({Name = "Snapline to Target", Flag = "SilentSnapline", Default = false, Callback = function() end})
-SilentSnaplineSection:Slider({Name = "Snapline Thickness", Flag = "SilentSnaplineThickness", Min = 1, Max = 5, Default = 1, Callback = function() end})
-
-local AimbotSection = AimingTab:Section({Name = "Aimlock / Aimbot", Side = 1})
-AimbotSection:Toggle({Name = "Enabled", Flag = "AimlockEnabled", Default = false, Callback = function() end})
-AimbotSection:Dropdown({Name = "Activation", Flag = "AimlockActivation", Default = "always", Items = {"always", "mouse 1", "mouse 2", "toggle"}, Callback = function() end})
-AimbotSection:Dropdown({Name = "Target Part", Flag = "AimlockTargetPart", Default = "Head", Items = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"}, Callback = function() end})
-AimbotSection:Dropdown({Name = "Aim Type", Flag = "AimlockType", Default = "Mouse", Items = {"Mouse", "Camera"}, Callback = function() end})
-AimbotSection:Toggle({Name = "Visible Check", Flag = "AimlockWallCheck", Default = false, Callback = function() end})
-AimbotSection:Toggle({Name = "Use FOV", Flag = "AimlockUseFOV", Default = false, Callback = function() end})
-AimbotSection:Toggle({Name = "Draw FOV", Flag = "AimlockDrawFOV", Default = false, Callback = function() end})
-AimbotSection:Slider({Name = "FOV Radius", Flag = "AimlockFOVRadius", Min = 0, Max = 1000, Default = 100, Callback = function() end})
-AimbotSection:Slider({Name = "Max Distance", Flag = "AimlockMaxDistance", Min = 10, Max = 5000, Default = 1000, Callback = function() end})
-AimbotSection:Slider({Name = "Smoothness", Flag = "AimlockSmoothness", Min = 1, Max = 50, Default = 1, Callback = function() end})
-AimbotSection:Toggle({Name = "Snapline", Flag = "AimlockSnapline", Default = false, Callback = function() end})
-AimbotSection:Slider({Name = "Snapline Thickness", Flag = "AimlockSnaplineThickness", Min = 1, Max = 5, Default = 1, Callback = function() end})
 
 
 -- ============================================================================
--- VISUALS TAB
+-- MOBILE SUPPORT / CLOSE BUTTON
 -- ============================================================================
-local DrawingESPSection = VisualsTab:Section({Name = "Drawing ESP", Side = 1})
-DrawingESPSection:Toggle({Name = "Master Switch", Flag = "EnemyESP", Default = false, Callback = function() end})
-DrawingESPSection:Toggle({Name = "Bounding Box", Flag = "EnemyBox", Default = false, Callback = function() end})
-DrawingESPSection:Toggle({Name = "Health Bar", Flag = "EnemyHealthBar", Default = false, Callback = function() end})
-DrawingESPSection:Toggle({Name = "Display Name", Flag = "EnemyName", Default = false, Callback = function() end})
-DrawingESPSection:Toggle({Name = "Distance", Flag = "EnemyDistance", Default = false, Callback = function() end})
-DrawingESPSection:Toggle({Name = "Snap Lines", Flag = "EnemySnaplines", Default = false, Callback = function() end})
-DrawingESPSection:Toggle({Name = "Skeleton", Flag = "EnemySkeleton", Default = false, Callback = function() end})
-DrawingESPSection:Toggle({Name = "Look Tracers", Flag = "EnemyLookTracers", Default = false, Callback = function() end})
-DrawingESPSection:Toggle({Name = "Highlight Chams", Flag = "EnemyChams", Default = false, Callback = function() end})
-
-local AdvancedESPSection = VisualsTab:Section({Name = "Advanced Nametags (ESP 3)", Side = 2})
-AdvancedESPSection:Toggle({Name = "Advanced Nametags Enabled", Flag = "ESP3Enabled", Default = false, Callback = function() end})
-AdvancedESPSection:Toggle({Name = "Show Advanced Healthbar", Flag = "ESP3Health", Default = false, Callback = function() end})
-AdvancedESPSection:Toggle({Name = "Show Advanced Distance", Flag = "ESP3Distance", Default = false, Callback = function() end})
-AdvancedESPSection:Toggle({Name = "Show Equipped Weapon", Flag = "ESP3Equipped", Default = false, Callback = function() end})
-
-local SkySection = VisualsTab:Section({Name = "World Visuals", Side = 2})
-SkySection:Toggle({Name = "Enable Saturation", Flag = "SatEnabled", Default = false, Callback = function() end})
-SkySection:Slider({Name = "Saturation Value", Flag = "SatValue", Min = 0, Max = 200, Default = 50, Callback = function() end})
-SkySection:Toggle({Name = "Enable Custom FOV", Flag = "FovEnabled", Default = false, Callback = function() end})
-SkySection:Slider({Name = "FOV Value", Flag = "FovValue", Min = 0, Max = 120, Default = 70, Callback = function() end})
-SkySection:Dropdown({Name = "Select Sky", Flag = "CustomSky", Default = "None", Items = {"None", "Pink Sky", "Green Sky", "Red Sky", "Night Sky", "Purple Sky", "Blue Sky", "Yellow Sky", "Cyan Sky", "Sunset", "Galaxy", "Blood Moon", "Void", "Matrix"}, Callback = function() end})
-
-local TracersSection = VisualsTab:Section({Name = "Bullet Tracers", Side = 2})
-TracersSection:Toggle({Name = "Enable Tracers", Flag = "TracersEnabled", Default = false, Callback = function() end})
-TracersSection:Toggle({Name = "Rainbow Tracers", Flag = "TracersRainbow", Default = false, Callback = function() end})
-TracersSection:Slider({Name = "Tracer Duration", Flag = "TracerDuration", Min = 0.5, Max = 10, Default = 3, Callback = function() end})
-
--- ============================================================================
--- MOBILE SUPPORT / CLOSE BUTTON / INIT
--- ============================================================================
-local CoreGui = game:GetService("CoreGui")
-local LocalPlayer = game:GetService("Players").LocalPlayer
-
 local mobileGui = Instance.new("ScreenGui")
 mobileGui.Name = "MianiFootballMobileToggleMenu"
 mobileGui.ResetOnSpawn = false
@@ -380,6 +737,7 @@ game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.RightShift or input.KeyCode == Enum.KeyCode.RightControl or input.KeyCode == Enum.KeyCode.Insert then toggleUI() end
 end)
 
+
 Library:Init()
 
 task.spawn(function()
@@ -395,7 +753,8 @@ task.spawn(function()
             if success then
                 uiScreen = CoreGui:FindFirstChild("Thugsense")
             else
-                uiScreen = LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("Thugsense")
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if playerGui then uiScreen = playerGui:FindFirstChild("Thugsense") end
             end
             
             if uiScreen then
