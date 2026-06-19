@@ -2871,54 +2871,7 @@ AimbotSection = AimingTab:Section({Name = "Aimlock / Aimbot", Side = 1})
 end
 
 -- ============================================================================
--- VISUALS TAB
--- ============================================================================
-do
-DrawingESPSection = VisualsTab:Section({Name = "Drawing ESP", Side = 1})
-    DrawingESPSection:Toggle({Name = "Master Switch", Flag = "EnemyESP", Default = false, Callback = function(state) ESPFlags.Enabled = state end})
-    DrawingESPSection:Toggle({Name = "Bounding Box", Flag = "EnemyBox", Default = false, Callback = function(state) ESPFlags.Box = state end})
-    DrawingESPSection:Toggle({Name = "Health Bar", Flag = "EnemyHealthBar", Default = false, Callback = function(state) ESPFlags.HealthBar = state end})
-    DrawingESPSection:Toggle({Name = "Display Name", Flag = "EnemyName", Default = false, Callback = function(state) ESPFlags.Name = state end})
-    DrawingESPSection:Toggle({Name = "Distance", Flag = "EnemyDistance", Default = false, Callback = function(state) ESPFlags.Distance = state end})
-    DrawingESPSection:Toggle({Name = "Snap Lines", Flag = "EnemySnaplines", Default = false, Callback = function(state) ESPFlags.Snaplines = state end})
-    DrawingESPSection:Toggle({Name = "Skeleton", Flag = "EnemySkeleton", Default = false, Callback = function(state) ESPFlags.Skeleton = state end})
-    DrawingESPSection:Toggle({Name = "Look Tracers", Flag = "EnemyLookTracers", Default = false, Callback = function(state) ESPFlags.LookTracers = state end})
-    DrawingESPSection:Toggle({Name = "Highlight Chams", Flag = "EnemyChams", Default = false, Callback = function(state) ESPFlags.Chams = state end})
-    local TracersSection = VisualsTab:Section({Name = "Bullet Tracers", Side = 2})
-    TracersSection:Toggle({Name = "Enable Tracers", Flag = "TracersEnabled", Default = false, Callback = function(state) Tracers.Enabled = state end})
-    TracersSection:Toggle({Name = "Rainbow Tracers", Flag = "TracersRainbow", Default = false, Callback = function(state) Tracers.Rainbow = state end})
-    TracersSection:Slider({Name = "Tracer Duration", Flag = "TracerDuration", Min = 0.5, Max = 10, Default = 3, Callback = function(val) Tracers.Duration = val end})
-AdvancedESPSection = VisualsTab:Section({Name = "Advanced Nametags (ESP 3)", Side = 2})
-    AdvancedESPSection:Toggle({Name = "Advanced Nametags Enabled", Flag = "ESP3Enabled", Default = false, Callback = function(state) ESPFlags.AdvancedNametags = state end})
-    AdvancedESPSection:Toggle({Name = "Show Advanced Healthbar", Flag = "ESP3Health", Default = false, Callback = function(state) ESPFlags.AdvancedHealth = state end})
-    AdvancedESPSection:Toggle({Name = "Show Advanced Distance", Flag = "ESP3Distance", Default = false, Callback = function(state) ESPFlags.AdvancedDistance = state end})
-    AdvancedESPSection:Toggle({Name = "Show Equipped Weapon", Flag = "ESP3Equipped", Default = false, Callback = function(state) ESPFlags.AdvancedEquipped = state end})
-SkySection = VisualsTab:Section({Name = "World Visuals", Side = 2})
-    SkySection:Toggle({Name = "Enable Saturation", Flag = "SatEnabled", Default = false, Callback = function(state) WorldVisuals.SaturationEnabled = state end})
-    SkySection:Slider({Name = "Saturation Value", Flag = "SatValue", Min = 0, Max = 200, Default = 50, Callback = function(val) WorldVisuals.SaturationValue = val/100 end})
-    SkySection:Toggle({Name = "Enable Custom FOV", Flag = "FovEnabled", Default = false, Callback = function(state) WorldVisuals.FieldOfViewEnabled = state end})
-    SkySection:Slider({Name = "FOV Value", Flag = "FovValue", Min = 0, Max = 120, Default = 70, Callback = function(val) WorldVisuals.FieldOfViewValue = val end})
-    SkySection:Dropdown({Name = "Select Sky", Flag = "CustomSky", Default = "None", Items = {"None", "Pink Sky", "Green Sky", "Red Sky", "Night Sky", "Purple Sky", "Blue Sky", "Yellow Sky", "Cyan Sky", "Sunset", "Galaxy", "Blood Moon", "Void", "Matrix"}, Callback = function(choice)
-        currentSkyChoice = tostring(choice)
-        pcall(applySky, currentSkyChoice)
-        notifyToggle("Sky", currentSkyChoice)
-    end})
-end
+        
+    
 
--- ============================================================================
--- FINAL INIT
--- ============================================================================
-Library:Init()
-
-
-
-    task.spawn(function()
-    task.wait(0.2)
-    if MainTab and typeof(MainTab.Select) == "function" then MainTab:Select() end
-    pcall(function()
-        if Window and Window.Elements and Window.Elements["Title"] then
-            Window.Elements["Title"].Instance.RichText = true
-        end
-    end)
-end)
 
