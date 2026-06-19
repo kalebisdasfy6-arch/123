@@ -1000,9 +1000,247 @@ if LocalPlayer.Character then
 end
 
 -- ============================================================================
--- PLAYER TAB UI (REMOVED)
+-- PLAYER TAB UI - BLUE GUN MODS
 -- ============================================================================
--- Player tab features removed as requested. Vehicle Settings moved to Main.
+MianiWeaponOriginals = MianiWeaponOriginals or {}
+WeaponMods.FireRateSpeed = WeaponMods.FireRateSpeed or 50
+WeaponMods.SpreadPercentage = WeaponMods.SpreadPercentage or 50
+WeaponMods.RecoilPercentage = WeaponMods.RecoilPercentage or 50
+WeaponMods.InfiniteDamage = WeaponMods.InfiniteDamage or false
+WeaponMods.KillAura = WeaponMods.KillAura or false
+WeaponMods.KillAuraRange = WeaponMods.KillAuraRange or 500
+
+function MianiGetWeaponOriginals(tool, settings)
+    if not tool or not settings then return nil end
+    MianiWeaponOriginals[tool.Name] = MianiWeaponOriginals[tool.Name] or {}
+    for key, value in pairs(settings) do
+        if MianiWeaponOriginals[tool.Name][key] == nil then
+            MianiWeaponOriginals[tool.Name][key] = value
+        end
+    end
+    return MianiWeaponOriginals[tool.Name]
+end
+
+function MianiPercent(defaultValue, percent)
+    if type(defaultValue) ~= "number" then return defaultValue end
+    return defaultValue * (math.clamp(tonumber(percent) or 100, 0, 100) / 100)
+end
+
+function applyBlueWeaponMods()
+    local tool, settings = getEquippedGunSetting()
+    if not tool or not settings then return end
+    local old = MianiGetWeaponOriginals(tool, settings)
+    if not old then return end
+
+    pcall(function()
+        if WeaponMods.InfiniteAmmo then
+            settings.Ammo = 99999
+            settings.AmmoPerMag = 99999
+            settings.LimitedAmmoEnabled = false
+        end
+        if WeaponMods.InfiniteClips then
+            settings.Ammo = 80000
+            settings.AmmoPerMag = 80000
+            settings.LimitedAmmoEnabled = false
+        end
+        if WeaponMods.Bullets80k then
+            settings.Ammo = 80000
+            settings.AmmoPerMag = 80000
+            settings.LimitedAmmoEnabled = false
+            local gunLocal = tool:FindFirstChild("GunScript_Local")
+            if gunLocal and type(getsenv) == "function" then
+                pcall(function()
+                    local env = getsenv(gunLocal)
+                    if env and type(env.Reload) == "function" and type(debug.setupvalue) == "function" then
+                        debug.setupvalue(env.Reload, 1, 80000)
+                        debug.setupvalue(env.Reload, 3, 80000)
+                    end
+                end)
+            end
+        end
+        if WeaponMods.ModifyFireRate then
+            settings.FireRate = MianiPercent(old.FireRate or settings.FireRate or 0, WeaponMods.FireRateSpeed)
+        end
+        if WeaponMods.InstantReload then
+            settings.ReloadTime = 0.01
+        elseif WeaponMods.ReloadSpeed then
+            settings.ReloadTime = WeaponMods.ReloadSpeed
+        end
+        if WeaponMods.InstantEquip then
+            settings.EquipTime = 0.01
+            settings.EquippingTime = 0.01
+        elseif WeaponMods.EquipSpeed then
+            settings.EquipTime = WeaponMods.EquipSpeed
+            settings.EquippingTime = WeaponMods.EquipSpeed
+        end
+        if WeaponMods.ModifySpreadValue then
+            if settings.SpreadXY ~= nil then settings.SpreadXY = MianiPercent(old.SpreadXY or settings.SpreadXY, WeaponMods.SpreadPercentage) end
+            if settings.SpreadYX ~= nil then settings.SpreadYX = MianiPercent(old.SpreadYX or settings.SpreadYX, WeaponMods.SpreadPercentage) end
+            if settings.Spread ~= nil then settings.Spread = MianiPercent(old.Spread or settings.Spread, WeaponMods.SpreadPercentage) end
+            if settings.SpreadX ~= nil then settings.SpreadX = MianiPercent(old.SpreadX or settings.SpreadX, WeaponMods.SpreadPercentage) end
+            if settings.SpreadY ~= nil then settings.SpreadY = MianiPercent(old.SpreadY or settings.SpreadY, WeaponMods.SpreadPercentage) end
+            settings.Accuracy = 1
+        end
+        if WeaponMods.ModifyRecoilValue then
+            if settings.Recoil ~= nil then settings.Recoil = MianiPercent(old.Recoil or settings.Recoil, WeaponMods.RecoilPercentage) end
+            settings.CameraRecoilingEnabled = false
+        end
+        if WeaponMods.Automatic then settings.Auto = true end
+        if WeaponMods.DisableJamming then settings.JamChance = 0 end
+        if WeaponMods.InfiniteDamage or WeaponMods.DamageAmplified then settings.BaseDamage = math.huge end
+        if WeaponMods.SpoofAccuracy then settings.Accuracy = 1 end
+    end)
+end
+
+function MianiForce80kBullets()
+    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+    if not tool then sendNotification("Gun Mods", "Hold a gun first!") return end
+    pcall(function()
+        if tool:FindFirstChild("Setting") then
+            local config = require(tool.Setting)
+            if type(config) == "table" then
+                config.Ammo = 80000
+                config.AmmoPerMag = 80000
+                config.LimitedAmmoEnabled = false
+            end
+        end
+        local gunLocal = tool:FindFirstChild("GunScript_Local")
+        if gunLocal and type(getsenv) == "function" then
+            local env = getsenv(gunLocal)
+            if env and type(env.Reload) == "function" and type(debug.setupvalue) == "function" then
+                debug.setupvalue(env.Reload, 1, 80000)
+                debug.setupvalue(env.Reload, 3, 80000)
+            end
+        end
+    end)
+    sendNotification("Gun Mods", "Forced 80k bullets on current gun.")
+end
+
+function MianiApplyHitboxExpander()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local part = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Head")
+            if part and part:IsA("BasePart") then
+                if WeaponMods.HitboxExpander then
+                    local size = tonumber(WeaponMods.HitboxSize) or 5
+                    part.Size = Vector3.new(size, size, size)
+                    part.Transparency = WeaponMods.HitboxVisible and 0.5 or 1
+                    part.Material = Enum.Material.ForceField
+                    part.CanCollide = false
+                    part.Massless = true
+                else
+                    part.Transparency = 1
+                end
+            end
+        end
+    end
+end
+
+function MianiUpdateGunColor()
+    if not GunChams then return end
+    local char = LocalPlayer.Character
+    local tool = char and char:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    for _, v in pairs(tool:GetDescendants()) do
+        if v:IsA("BasePart") then
+            if not GunOriginalColors[v] then GunOriginalColors[v] = v.Color end
+            if RainbowGun then
+                v.Color = Color3.fromHSV((tick() % 5) / 5, 1, 1)
+            else
+                v.Color = GunChamsColor or Color3.fromRGB(0, 200, 0)
+            end
+            v.Material = Enum.Material.Neon
+        end
+    end
+end
+
+function MianiRestoreGunColor()
+    for part, color in pairs(GunOriginalColors) do
+        if part and part.Parent then
+            part.Color = color
+            part.Material = Enum.Material.Plastic
+        end
+    end
+    GunOriginalColors = {}
+end
+
+task.spawn(function()
+    while task.wait(0.25) do
+        pcall(applyBlueWeaponMods)
+        if WeaponMods.HitboxExpander then pcall(MianiApplyHitboxExpander) end
+    end
+end)
+RunService.RenderStepped:Connect(function()
+    pcall(MianiUpdateGunColor)
+end)
+
+BlueGunModsSection = PlayerTab:Section({Name = "Weapon Modifications", Side = 1})
+function BlueBindWeaponToggle(displayName, key, flag)
+    BlueGunModsSection:Toggle({Name = displayName, Flag = flag, Default = false, Callback = function(state)
+        WeaponMods[key] = state
+        if key == "InfiniteDamage" then WeaponMods.DamageAmplified = state end
+        pcall(applyAllWeaponMods)
+        pcall(applyBlueWeaponMods)
+    end})
+end
+BlueBindWeaponToggle("Infinite Ammo", "InfiniteAmmo", "BlueWM_InfiniteAmmo")
+BlueBindWeaponToggle("Infinite Clips", "InfiniteClips", "BlueWM_InfiniteClips")
+BlueBindWeaponToggle("Infinite Damage", "InfiniteDamage", "BlueWM_InfiniteDamage")
+BlueBindWeaponToggle("Instant Reload", "InstantReload", "BlueWM_InstantReload")
+BlueBindWeaponToggle("Instant Equip", "InstantEquip", "BlueWM_InstantEquip")
+BlueBindWeaponToggle("80k Bullets", "Bullets80k", "BlueWM_80kBullets")
+BlueBindWeaponToggle("Fully Automatic", "Automatic", "BlueWM_Automatic")
+BlueBindWeaponToggle("Disable Jamming", "DisableJamming", "BlueWM_DisableJamming")
+BlueBindWeaponToggle("Modify Recoil Value", "ModifyRecoilValue", "BlueWM_ModifyRecoil")
+BlueBindWeaponToggle("Modify Spread Value", "ModifySpreadValue", "BlueWM_ModifySpread")
+BlueBindWeaponToggle("Modify Fire Rate", "ModifyFireRate", "BlueWM_ModifyFireRate")
+BlueGunModsSection:Button({Name = "Force 80k Bullets", Callback = MianiForce80kBullets})
+
+BlueGunSettingsSection = PlayerTab:Section({Name = "Weapon Modification Settings", Side = 2})
+BlueGunSettingsSection:Label({Name = "100% is default percentage.", Alignment = "Left"})
+BlueGunSettingsSection:Slider({Name = "Fire-Rate Percentage", Flag = "BlueWM_FireRatePercent", Min = 1, Max = 100, Default = 50, Callback = function(value)
+    WeaponMods.FireRateSpeed = value
+    pcall(applyBlueWeaponMods)
+end})
+BlueGunSettingsSection:Slider({Name = "Spread Percentage", Flag = "BlueWM_SpreadPercent", Min = 1, Max = 100, Default = 50, Callback = function(value)
+    WeaponMods.SpreadPercentage = value
+    pcall(applyBlueWeaponMods)
+end})
+BlueGunSettingsSection:Slider({Name = "Recoil Percentage", Flag = "BlueWM_RecoilPercent", Min = 1, Max = 100, Default = 50, Callback = function(value)
+    WeaponMods.RecoilPercentage = value
+    pcall(applyBlueWeaponMods)
+end})
+BlueGunSettingsSection:Slider({Name = "Reload Speed", Flag = "BlueWM_ReloadSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value)
+    WeaponMods.ReloadSpeed = value
+    pcall(applyAllWeaponMods)
+    pcall(applyBlueWeaponMods)
+end})
+BlueGunSettingsSection:Slider({Name = "Equip Speed", Flag = "BlueWM_EquipSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value)
+    WeaponMods.EquipSpeed = value
+    pcall(applyAllWeaponMods)
+    pcall(applyBlueWeaponMods)
+end})
+BlueGunSettingsSection:Toggle({Name = "Bullet Hitbox Expander", Flag = "BlueWM_HitboxExpander", Default = false, Callback = function(state) WeaponMods.HitboxExpander = state end})
+BlueGunSettingsSection:Toggle({Name = "Bullet Hitbox Visible", Flag = "BlueWM_HitboxVisible", Default = false, Callback = function(state) WeaponMods.HitboxVisible = state end})
+BlueGunSettingsSection:Slider({Name = "Bullet Hitbox Size", Flag = "BlueWM_HitboxSize", Min = 1, Max = 15, Default = 5, Callback = function(value) WeaponMods.HitboxSize = value end})
+
+BlueGunColorSection = PlayerTab:Section({Name = "Gun Color", Side = 2})
+GunChamsColor = GunChamsColor or Color3.fromRGB(0, 200, 0)
+BlueGunColorSection:Toggle({Name = "Enable Gun Color", Flag = "BlueWM_GunColor", Default = false, Callback = function(state)
+    GunChams = state
+    if not state then MianiRestoreGunColor() end
+end})
+BlueGunColorSection:Toggle({Name = "Rainbow Gun Color", Flag = "BlueWM_RainbowGun", Default = false, Callback = function(state)
+    RainbowGun = state
+end})
+BlueGunColorSection:Dropdown({Name = "Gun Color", Flag = "BlueWM_GunColorSelect", Items = {"Green", "Purple", "Red", "Blue", "Pink", "Cyan", "Yellow", "White"}, Default = "Green", Callback = function(value)
+    local colors = {
+        Green = Color3.fromRGB(0, 200, 0), Purple = Color3.fromRGB(143, 0, 255), Red = Color3.fromRGB(255, 0, 0),
+        Blue = Color3.fromRGB(0, 120, 255), Pink = Color3.fromRGB(255, 80, 180), Cyan = Color3.fromRGB(0, 255, 255),
+        Yellow = Color3.fromRGB(255, 255, 0), White = Color3.fromRGB(255, 255, 255)
+    }
+    GunChamsColor = colors[tostring(value)] or Color3.fromRGB(0, 200, 0)
+end})
 
 -- ============================================================================
 -- VEHICLE SETTINGS SUPPORT (MOVED TO MAIN)
@@ -1555,6 +1793,278 @@ task.spawn(function()
     while task.wait(0.5) do if currentSkyChoice ~= "None" then pcall(applySky, currentSkyChoice) end end
 end)
 
+
+-- ============================================================================
+-- MAIN TARGET SUPPORT (BLUE MERGE)
+-- ============================================================================
+local TargetUtilities = {
+    SelectedPlayer = nil,
+    AutoRefreshList = false,
+    SpectatePlayer = false,
+    BringingPlayer = false,
+    BringingNearestPlayer = false,
+    BugPlayer = false,
+    AutoKill = false,
+    AutoRagdoll = false,
+}
+local TargetDropdownObject = nil
+local TargetPlayerNames = {}
+
+local function getTargetPlayerList()
+    local list = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(list, player.Name)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+local function resolveTargetDropdownValue(value)
+    if type(value) == "table" then
+        if value[1] then return value[1] end
+        for key, enabled in pairs(value) do
+            if enabled then return key end
+        end
+        return nil
+    end
+    return value
+end
+
+local function getSelectedTargetPlayer()
+    local selected = resolveTargetDropdownValue(TargetUtilities.SelectedPlayer or flags["MainTargetPlayer"])
+    if typeof(selected) == "Instance" and selected:IsA("Player") then return selected end
+    if type(selected) == "string" and selected ~= "" then
+        return Players:FindFirstChild(selected)
+    end
+    return nil
+end
+
+local function refreshTargetPlayerDropdown(silent)
+    TargetPlayerNames = getTargetPlayerList()
+    if (not TargetUtilities.SelectedPlayer) or (not table.find(TargetPlayerNames, TargetUtilities.SelectedPlayer)) then
+        TargetUtilities.SelectedPlayer = TargetPlayerNames[1]
+        flags["MainTargetPlayer"] = TargetUtilities.SelectedPlayer
+    end
+
+    if TargetDropdownObject then
+        pcall(function()
+            if TargetDropdownObject.Refresh then TargetDropdownObject:Refresh(TargetPlayerNames) end
+        end)
+        pcall(function()
+            if TargetDropdownObject.refresh_options then TargetDropdownObject:refresh_options(TargetPlayerNames) end
+        end)
+        pcall(function()
+            if TargetDropdownObject.Set and TargetUtilities.SelectedPlayer then TargetDropdownObject:Set(TargetUtilities.SelectedPlayer) end
+        end)
+        pcall(function()
+            if TargetDropdownObject.set and TargetUtilities.SelectedPlayer then TargetDropdownObject:set(TargetUtilities.SelectedPlayer) end
+        end)
+    end
+
+    if not silent then
+        sendNotification("Target", "Player list refreshed: " .. tostring(#TargetPlayerNames) .. " players")
+    end
+end
+
+
+local function isValidTargetPlayer(player)
+    if not player or player == LocalPlayer then return false end
+    local character = player.Character
+    if not character then return false end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    return humanoid and humanoid.Health > 0 and root ~= nil
+end
+
+local function getNearestTargetPlayer(maxDistance)
+    local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return nil end
+    local nearest, nearestDistance = nil, maxDistance or math.huge
+    for _, player in ipairs(Players:GetPlayers()) do
+        if isValidTargetPlayer(player) then
+            local distance = (player.Character.HumanoidRootPart.Position - localRoot.Position).Magnitude
+            if distance < nearestDistance then
+                nearest = player
+                nearestDistance = distance
+            end
+        end
+    end
+    return nearest, nearestDistance
+end
+
+local function mainTargetDistanceCheck(player, distance)
+    if not player or not player.Character then return false end
+    local root = player.Character:FindFirstChild("HumanoidRootPart")
+    local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root or not localRoot then return false end
+    return distance > (localRoot.Position - root.Position).Magnitude
+end
+
+local function targetGunRemote(targetName, hitPart, damage)
+    hitPart = hitPart or "Head"
+    damage = damage or math.huge
+    local target = Players:FindFirstChild(tostring(targetName))
+    if not target or not target.Character or not target.Character:FindFirstChild(hitPart) then return end
+    if not target.Character:FindFirstChildOfClass("Humanoid") then return end
+
+    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+    if not tool then
+        sendNotification("Target", "Hold a gun/tool first.")
+        return
+    end
+
+    pcall(function()
+        if tool:FindFirstChild("Setting") then require(tool.Setting).Range = 10000 end
+    end)
+
+    local hitpos = target.Character[hitPart].Position
+
+    pcall(function()
+        if ReplicatedStorage:FindFirstChild("VisualizeMuzzle") and tool:FindFirstChild("Handle") and tool:FindFirstChild("GunScript_Local") then
+            ReplicatedStorage.VisualizeMuzzle:FireServer(
+                tool.Handle,
+                true,
+                {false, 7, Color3.new(1, 1.1098039150238, 0), 15, true, 0.02},
+                tool.GunScript_Local:FindFirstChild("MuzzleEffect") or tool.GunScript_Local.MuzzleEffect
+            )
+        end
+    end)
+
+    pcall(function()
+        if ReplicatedStorage:FindFirstChild("VisualizeBullet") and tool:FindFirstChild("Handle") and tool:FindFirstChild("GunScript_Local") then
+            ReplicatedStorage.VisualizeBullet:FireServer(
+                tool,
+                tool.Handle,
+                Vector3.new(-0.17746905982494, 0.088731124997139, 0.98011803627014),
+                tool.Handle:FindFirstChild("GunFirePoint") or tool.Handle,
+                {true, {112139677907600, 92977228204408, 112139677907600, 92977228204408}, 1, 1, 10, tool.GunScript_Local:FindFirstChild("HitEffect"), true},
+                {true, {0, 0, 0, 0, 0, 0}, 1, 1, 1, tool.GunScript_Local:FindFirstChild("BloodEffect")},
+                {true, 0.2, {3696144972}, true, 7, 1},
+                {false, 8, true, {163064102}, 1, 1.5, 1, false, tool.GunScript_Local:FindFirstChild("ExplosionEffect")},
+                {false, Vector3.new(0.1, 0, 0), Vector3.new(-0.1, 0, 0), tool.GunScript_Local:FindFirstChild("TracerEffect"), nil, tool.GunScript_Local:FindFirstChild("ParticleEffect"), 300, 526, 0, Vector3.zero, Vector3.new(0.4, 0.4, 0.4), Color3.new(0.63921570777893, 0.63529413938522, 0.61176472902298), 1, Enum.Material.Neon, Enum.PartType.Cylinder, false, 6696543809, 0, Vector3.new(0.007, 0.007, 0.007)},
+                {true, {269514869, 269514887, 269514807, 269514817}, 0.5, 1, 1.5, 100},
+                {false, 3, Color3.new(1, 0.64705884456635, 0.60000002384186), 6, true}
+            )
+        end
+    end)
+
+    pcall(function()
+        if ReplicatedStorage:FindFirstChild("InflictTarget") then
+            ReplicatedStorage.InflictTarget:FireServer(
+                tool,
+                LocalPlayer,
+                target.Character.Humanoid,
+                target.Character[hitPart],
+                damage,
+                {0, 0, false, false, tool:FindFirstChild("GunScript_Server") and tool.GunScript_Server:FindFirstChild("IgniteScript"), tool:FindFirstChild("GunScript_Server") and tool.GunScript_Server:FindFirstChild("IcifyScript"), 100, 100},
+                {false, 5, 3},
+                target.Character[hitPart],
+                {false, {1930359546}, 1, 1.5, 1},
+                hitpos,
+                Vector3.new(0.074456036090851, -0.099775791168213, -0.99222022294998),
+                true
+            )
+        end
+    end)
+end
+
+local function getAvailableTargetVehicle()
+    local civCars = workspace:FindFirstChild("CivCars")
+    if not civCars then return nil end
+    for _, vehicle in ipairs(civCars:GetChildren()) do
+        local driveSeat = vehicle:FindFirstChild("DriveSeat") or vehicle:FindFirstChildWhichIsA("VehicleSeat")
+        if driveSeat and not driveSeat.Occupant then return vehicle end
+    end
+    return nil
+end
+
+local targetSpectateReset = true
+RunService:BindToRenderStep("MianiTargetSpectate", Enum.RenderPriority.Camera.Value, function()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    if TargetUtilities.SpectatePlayer then
+        targetSpectateReset = false
+        local target = getSelectedTargetPlayer()
+        local subject = target and target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+        if not subject and LocalPlayer.Character then subject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid") end
+        if subject then camera.CameraSubject = subject end
+    elseif not targetSpectateReset and LocalPlayer.Character then
+        targetSpectateReset = true
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then camera.CameraSubject = hum end
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if TargetUtilities.BringingPlayer then
+            local target = getSelectedTargetPlayer()
+            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                target.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(2, 0, 0)
+            end
+        end
+        if TargetUtilities.BringingNearestPlayer then
+            local target = getNearestTargetPlayer()
+            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                target.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(2, 0, 0)
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(1) do
+        if TargetUtilities.AutoKill then
+            local target = getSelectedTargetPlayer()
+            if target and isValidTargetPlayer(target) and not target.Character:FindFirstChildOfClass("ForceField") then
+                targetGunRemote(target.Name, "Head", math.huge)
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(2) do
+        if TargetUtilities.AutoRagdoll then
+            local target = getSelectedTargetPlayer()
+            if target and isValidTargetPlayer(target) and target.Character.Humanoid:GetState() ~= Enum.HumanoidStateType.Physics then
+                targetGunRemote(target.Name, "RightUpperLeg", 0.01)
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if not TargetUtilities.BugPlayer then continue end
+        local target = getSelectedTargetPlayer()
+        if not (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")) then continue end
+        if not (target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")) then continue end
+        local car = getAvailableTargetVehicle()
+        if not car then continue end
+        local seat = car:FindFirstChild("DriveSeat") or car:FindFirstChildWhichIsA("VehicleSeat")
+        if not seat or seat.Occupant then continue end
+        if not car:GetAttribute("Usable") or car:GetAttribute("Usable") == false then
+            pcall(function() seat:Sit(LocalPlayer.Character.Humanoid) end)
+            car:SetAttribute("Usable", true)
+            task.wait(1)
+            pcall(function()
+                LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                LocalPlayer.Character.Humanoid.Jump = true
+                LocalPlayer.Character.Humanoid.Sit = false
+            end)
+        end
+        if not car.PrimaryPart then
+            pcall(function() car.PrimaryPart = car:FindFirstChild("Body") and (car.Body:FindFirstChild("#Weight", true) or car.Body:FindFirstChildWhichIsA("BasePart", true)) or car:FindFirstChildWhichIsA("BasePart", true) end)
+        end
+        if car.PrimaryPart then
+            car:SetPrimaryPartCFrame(target.Character.HumanoidRootPart.CFrame)
+        end
+    end
+end)
+
 -- ============================================================================
 -- END ALABAMA MAIN SUPPORT
 -- ============================================================================
@@ -1592,6 +2102,85 @@ local teleportLocations = {
 local teleportNames = {}
 for name in pairs(teleportLocations) do table.insert(teleportNames, name) end
 table.sort(teleportNames)
+
+
+local TargetSection = MainTab:Section({Name = "Target", Side = 1})
+TargetPlayerNames = getTargetPlayerList()
+TargetUtilities.SelectedPlayer = TargetPlayerNames[1]
+flags["MainTargetPlayer"] = TargetUtilities.SelectedPlayer
+TargetDropdownObject = TargetSection:Dropdown({Name = "Select Player", Flag = "MainTargetPlayer", Default = TargetPlayerNames[1] or "", Items = TargetPlayerNames, Callback = function(v)
+    TargetUtilities.SelectedPlayer = resolveTargetDropdownValue(v)
+    flags["MainTargetPlayer"] = TargetUtilities.SelectedPlayer
+end})
+TargetSection:Button({Name = "Refresh Player List", Callback = function()
+    refreshTargetPlayerDropdown(false)
+end})
+TargetSection:Toggle({Name = "Spectate Player", Flag = "TargetSpectatePlayer", Default = false, Callback = function(state)
+    TargetUtilities.SpectatePlayer = state
+    notifyToggle("Spectate Player", state)
+end})
+TargetSection:Toggle({Name = "Bring Nearest Player", Flag = "TargetBringNearest", Default = false, Callback = function(state)
+    TargetUtilities.BringingNearestPlayer = state
+    notifyToggle("Bring Nearest Player", state)
+end})
+TargetSection:Toggle({Name = "Bring Player", Flag = "TargetBringPlayer", Default = false, Callback = function(state)
+    TargetUtilities.BringingPlayer = state
+    notifyToggle("Bring Player", state)
+end})
+TargetSection:Toggle({Name = "Bug / Kill Player - Car", Flag = "TargetBugPlayerCar", Default = false, Callback = function(state)
+    TargetUtilities.BugPlayer = state
+    notifyToggle("Bug / Kill Player - Car", state)
+end})
+TargetSection:Toggle({Name = "Auto Kill Player - Gun", Flag = "TargetAutoKillGun", Default = false, Callback = function(state)
+    TargetUtilities.AutoKill = state
+    notifyToggle("Auto Kill Player - Gun", state)
+end})
+TargetSection:Toggle({Name = "Auto Ragdoll Player - Gun", Flag = "TargetAutoRagdollGun", Default = false, Callback = function(state)
+    TargetUtilities.AutoRagdoll = state
+    notifyToggle("Auto Ragdoll Player - Gun", state)
+end})
+TargetSection:Button({Name = "Teleport To Player", Callback = function()
+    local target = getSelectedTargetPlayer()
+    if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+        Config:Teleport(target.Character.HumanoidRootPart.CFrame * CFrame.new(3, 0, 0))
+    else
+        sendNotification("Target", "No valid target selected.")
+    end
+end})
+TargetSection:Button({Name = "Down Player - Hold Gun", Callback = function()
+    local target = getSelectedTargetPlayer()
+    if target and target.Character and target.Character:FindFirstChildOfClass("Humanoid") then
+        targetGunRemote(target.Name, "HumanoidRootPart", math.max(target.Character.Humanoid.Health - 5, 1))
+    else
+        sendNotification("Target", "No valid target selected.")
+    end
+end})
+TargetSection:Button({Name = "Kill Player - Hold Gun", Callback = function()
+    local target = getSelectedTargetPlayer()
+    if target then targetGunRemote(target.Name, "HumanoidRootPart", math.huge) else sendNotification("Target", "No valid target selected.") end
+end})
+TargetSection:Button({Name = "God Player - Hold Gun", Callback = function()
+    local target = getSelectedTargetPlayer()
+    if target then targetGunRemote(target.Name, "HumanoidRootPart", math.sqrt(-1)) else sendNotification("Target", "No valid target selected.") end
+end})
+TargetSection:Button({Name = "Fling Player - Hold Gun", Callback = function()
+    local target = getSelectedTargetPlayer()
+    if target then
+        for _ = 1, 50 do pcall(function() targetGunRemote(target.Name, "RightUpperLeg", 0.01) end) end
+    else
+        sendNotification("Target", "No valid target selected.")
+    end
+end})
+TargetSection:Button({Name = "Kill All Players - Hold Gun", Callback = function()
+    task.spawn(function()
+        for _, player in ipairs(Players:GetPlayers()) do
+            if isValidTargetPlayer(player) and not player.Character:FindFirstChildOfClass("ForceField") then
+                pcall(function() targetGunRemote(player.Name, "HumanoidRootPart", math.huge) end)
+                task.wait(0.1)
+            end
+        end
+    end)
+end})
 
 local QuickBuySection = MainTab:Section({Name = "Quick Buy", Side = 2})
 local shopItems = collectShopItems()
@@ -2405,7 +2994,7 @@ local function toggleUI()
 end
 toggleButton.MouseButton1Click:Connect(toggleUI)
 
-local dragging, dragStart, startPos
+dragging, dragStart, startPos = false, nil, nil
 toggleButton.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true; dragStart = input.Position; startPos = toggleButton.Position
