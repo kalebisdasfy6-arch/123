@@ -20,6 +20,7 @@ local Watermark = Library:Watermark("miani football")
 local KeybindList = Library:KeybindList()
 Watermark:SetVisibility(false)
 KeybindList:SetVisibility(false)
+pcall(function() if Window and Window.Elements and Window.Elements["Title"] then Window.Elements["Title"].Instance.RichText = true end end)
 
 -- Navigation tabs configuration
 PlayerTab = Window:Page({Name = "Player",   Columns = 2, Subtabs = false})
@@ -2840,43 +2841,6 @@ VehicleSection = PlayerTab:Section({Name = "Vehicle Settings", Side = 2})
         seat:Sit(hum)
         sendNotification("Bring Car", "Car brought successfully!")
     end})
-
-GunModsSection = PlayerTab:Section({Name = "Gun Modifications", Side = 1})
-    local function bindWeaponToggle(name, key, flag)
-        GunModsSection:Toggle({Name = name, Flag = flag, Default = false, Callback = function(state) WeaponMods[key] = state; applyAllWeaponMods() end})
-    end
-    bindWeaponToggle("Infinite Ammo", "InfiniteAmmo", "WM_InfiniteAmmo")
-    bindWeaponToggle("Infinite Mag", "InfiniteClips", "WM_InfiniteClips")
-    bindWeaponToggle("80k Bullets", "Bullets80k", "WM_Bullets80k")
-    bindWeaponToggle("No Recoil", "ModifyRecoilValue", "WM_NoRecoil")
-    bindWeaponToggle("No Spread", "ModifySpreadValue", "WM_NoSpread")
-    bindWeaponToggle("No Jam", "DisableJamming", "WM_NoJam")
-    bindWeaponToggle("Instant Reload", "InstantReload", "WM_InstantReload")
-    bindWeaponToggle("Instant Equip", "InstantEquip", "WM_InstantEquip")
-    bindWeaponToggle("Full Auto", "Automatic", "WM_FullAuto")
-    bindWeaponToggle("Fast Fire Rate", "ModifyFireRate", "WM_FastFireRate")
-    bindWeaponToggle("One Tap Damage", "DamageAmplified", "WM_OneTapDamage")
-    bindWeaponToggle("Spoof Accuracy", "SpoofAccuracy", "WM_SpoofAccuracy")
-    bindWeaponToggle("Bullet Hitbox Expander", "HitboxExpander", "WM_HitboxExpander")
-    bindWeaponToggle("Bullet Hitbox Visible", "HitboxVisible", "WM_HitboxVisible")
-    bindWeaponToggle("Bullet Hitmarkers", "Hitmarkers", "WM_Hitmarkers")
-    GunModsSection:Slider({Name = "Reload Speed", Flag = "WM_ReloadSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value) WeaponMods.ReloadSpeed = value; applyAllWeaponMods() end})
-    GunModsSection:Slider({Name = "Equip Speed", Flag = "WM_EquipSpeed", Min = 0.01, Max = 1, Default = 0.2, Callback = function(value) WeaponMods.EquipSpeed = value; applyAllWeaponMods() end})
-    GunModsSection:Slider({Name = "Bullet Hitbox Size", Flag = "WM_HitboxSize", Min = 1, Max = 10, Default = 1, Callback = function(value) WeaponMods.HitboxSize = value end})
-    GunModsSection:Toggle({Name = "Enable Gun Color", Flag = "WM_GunColor", Default = false, Callback = function(state)
-        GunChams = state
-        if not state then
-            for part, color in pairs(GunOriginalColors) do if part and part.Parent then part.Color = color; part.Material = Enum.Material.Plastic end end
-            GunOriginalColors = {}
-        end
-    end})
-    GunModsSection:Toggle({Name = "Rainbow Gun Color", Flag = "WM_GunRainbow", Default = false, Callback = function(state) RainbowGun = state end})
-end
-
--- ============================================================================
--- AIMING TAB
--- ============================================================================
-do
 SilentSection = AimingTab:Section({Name = "Silent Aim", Side = 1})
     SilentSection:Toggle({Name = "Enabled", Flag = "SilentEnabled", Default = false, Callback = function(state) Silent.Enabled = state; notifyToggle("Silent Aim", state) end})
     SilentSection:Toggle({Name = "Visible Check", Flag = "SilentWallCheck", Default = false, Callback = function(state) setFlag("SilentWallCheck", state) end})
