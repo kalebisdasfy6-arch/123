@@ -114,47 +114,44 @@ local SafeTab     = MainWindow:AddTab({ Text = "🛡️ Safe",     Icon = "rbxas
 })
 
 -- ============================================================
---  PATCH: Mobile scroll fix — OnClick only fires if touch didn't drag
+--  PATCH: Mobile scroll fix — make left/right columns show scrollbar
+--  and increase scroll frame touch priority so dragging scrolls, not clicks
 -- ============================================================
-do
-    local DRAG_THRESHOLD = 12  -- pixels of movement = considered a scroll, not a tap
-    local _origOnClick = Library.OnClick
-    Library.OnClick = function(self, Callback)
-        local startPos = nil
-        local moved = false
-
-        local downConn = Library:Connect(self.Instance.InputBegan, function(input)
-            if input.UserInputType == Enum.UserInputType.Touch
-            or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                startPos = input.Position
-                moved = false
-            end
-        end)
-
-        Library:Connect(self.Instance.InputChanged, function(input)
-            if startPos and (input.UserInputType == Enum.UserInputType.Touch
-            or input.UserInputType == Enum.UserInputType.MouseMovement) then
-                local delta = (input.Position - startPos).Magnitude
-                if delta > DRAG_THRESHOLD then
-                    moved = true
+task.spawn(function()
+    task.wait(0.3)
+    pcall(function()
+        -- Find all ScrollingFrames that Aether uses for Left/Right columns
+        -- and make them properly scroll on mobile
+        local function patchScrollFrames(root)
+            for _, v in ipairs(root:GetDescendants()) do
+                if v:IsA("ScrollingFrame") and v.ScrollBarThickness == 0 then
+                    v.ScrollBarThickness = 3
+                    v.ScrollBarImageColor3 = Color3.fromRGB(61, 220, 132)
+                    v.ScrollBarImageTransparency = 0.5
+                    v.ElasticBehavior = Enum.ElasticBehavior.WhenScrollable
+                    v.ScrollingEnabled = true
+                    -- Active=true means it eats touch input for scrolling
+                    -- which stops it passing to children while scrolling
+                    v.Active = true
                 end
             end
-        end)
-
-        Library:Connect(self.Instance.InputEnded, function(input)
-            if input.UserInputType == Enum.UserInputType.Touch
-            or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                if not moved then
-                    Callback()
-                end
-                startPos = nil
-                moved = false
+        end
+        local menu = MainWindow.Items.Menu.Instance
+        patchScrollFrames(menu)
+        -- Also patch any that get added later (tab switches)
+        menu.DescendantAdded:Connect(function(d)
+            if d:IsA("ScrollingFrame") and d.ScrollBarThickness == 0 then
+                task.wait(0.05)
+                d.ScrollBarThickness = 3
+                d.ScrollBarImageColor3 = Color3.fromRGB(61, 220, 132)
+                d.ScrollBarImageTransparency = 0.5
+                d.ElasticBehavior = Enum.ElasticBehavior.WhenScrollable
+                d.ScrollingEnabled = true
+                d.Active = true
             end
         end)
-
-        return downConn
-    end
-end
+    end)
+end)
 
 -- ============================================================
 --  PATCH: Make ALL Aether dropdowns scrollable (click-safe)
