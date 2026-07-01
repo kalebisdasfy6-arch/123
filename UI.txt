@@ -114,6 +114,98 @@ local SafeTab     = MainWindow:AddTab({ Text = "🛡️ Safe",     Icon = "rbxas
 })
 
 -- ============================================================
+--  PATCH: Mobile scroll fix — OnClick only fires if touch didn't drag
+-- ============================================================
+do
+    local DRAG_THRESHOLD = 12  -- pixels of movement = considered a scroll, not a tap
+    local _origOnClick = Library.OnClick
+    Library.OnClick = function(self, Callback)
+        local startPos = nil
+        local moved = false
+
+        local downConn = Library:Connect(self.Instance.InputBegan, function(input)
+            if input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                startPos = input.Position
+                moved = false
+            end
+        end)
+
+        Library:Connect(self.Instance.InputChanged, function(input)
+            if startPos and (input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseMovement) then
+                local delta = (input.Position - startPos).Magnitude
+                if delta > DRAG_THRESHOLD then
+                    moved = true
+                end
+            end
+        end)
+
+        Library:Connect(self.Instance.InputEnded, function(input)
+            if input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if not moved then
+                    Callback()
+                end
+                startPos = nil
+                moved = false
+            end
+        end)
+
+        return downConn
+    end
+end
+
+-- ============================================================
+--  PATCH: Make ALL Aether dropdowns scrollable (click-safe)
+-- ============================================================
+do
+    local _origAddDropdown = Library.AddDropdown
+    Library.AddDropdown = function(self, Data)
+        local dd = _origAddDropdown(self, Data)
+        task.spawn(function()
+            task.wait(0.05)
+            pcall(function()
+                local holder = dd.Items.DropdownHolder.Instance
+                -- Just cap the max height — keep AutomaticSize so Aether
+                -- still controls it, but clamp it so it doesn't go forever
+                local constraint = Instance.new("UISizeConstraint")
+                constraint.MaxSize = Vector2.new(math.huge, 180)
+                constraint.Parent = holder
+                holder.ClipsDescendants = true
+                -- Enable scroll wheel on the holder itself
+                -- Aether uses a TextButton so we hook InputChanged on it
+                local layout = holder:FindFirstChildOfClass("UIListLayout")
+                local scrollOffset = 0
+                holder.InputChanged:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseWheel then
+                        if not layout then return end
+                        -- Get total content height
+                        local contentHeight = layout.AbsoluteContentSize.Y
+                        local visibleHeight = holder.AbsoluteSize.Y
+                        if contentHeight <= visibleHeight then return end
+                        -- Scroll by moving all children up/down via padding
+                        local pad = holder:FindFirstChildOfClass("UIPadding")
+                        if not pad then
+                            pad = Instance.new("UIPadding")
+                            pad.Parent = holder
+                        end
+                        local step = 30
+                        scrollOffset = math.clamp(
+                            scrollOffset - (input.Position.Z * step),
+                            0,
+                            contentHeight - visibleHeight
+                        )
+                        pad.PaddingTop = UDim.new(0, -scrollOffset)
+                    end
+                end)
+            end)
+        end)
+        return dd
+    end
+end
+
+-- ============================================================
 --  HELPERS / NOTIFICATIONS
 -- ============================================================
 local function sendNotification(title, text)
