@@ -2981,6 +2981,238 @@ BlueGunColorSection:AddDropdown("BlueWM_GunColorSelect", {
     end
 })
 
+task.defer(function()
+    local function qbFindPrompt(obj)
+        if not obj then return nil end
+        if obj:IsA("ProximityPrompt") then return obj end
+        for _, child in ipairs(obj:GetChildren()) do
+            local found = qbFindPrompt(child)
+            if found then return found end
+        end
+        return nil
+    end
+
+    local function getObjectCFrame(obj)
+        if not obj then return nil end
+        if obj:IsA("BasePart") then return obj.CFrame end
+        if obj:IsA("Model") then
+            if obj.PrimaryPart then return obj.PrimaryPart.CFrame end
+            local part = obj:FindFirstChildWhichIsA("BasePart", true)
+            if part then return part.CFrame end
+            local ok, pivot = pcall(function() return obj:GetPivot() end)
+            if ok then return pivot end
+        end
+        local parent = obj.Parent
+        if parent and parent:IsA("BasePart") then return parent.CFrame end
+        return nil
+    end
+
+    local function buildQuickBuyCatalog()
+        local exoticItems = {"FakeCard","Ice-Fruit Bag","Ice-Fruit Cupz","FijiWater","FreshWater","G26","Lemonade","Sledge Hammer","Screw","Bandage","SugarBag"}
+        local mainShopItems = {"Shiesty","BluGloves","WhiteGloves","BlackGloves","Water","YelloCamoGloves","RedCamoGloves","PurpleCamoGloves","RawChicken","RawSteak","WhiteShiesty"}
+        local bagItems, otherItems, seen = {}, {}, {}
+        if ReplicatedStorage:FindFirstChild("BACKPACK_HATS") and ReplicatedStorage.BACKPACK_HATS:FindFirstChild("Accessories") then
+            for _, item in ipairs(ReplicatedStorage.BACKPACK_HATS.Accessories:GetChildren()) do table.insert(bagItems, item.Name) end
+            table.sort(bagItems)
+        end
+        if workspace:FindFirstChild("GUNS") then
+            for _, gun in ipairs(workspace.GUNS:GetChildren()) do
+                if gun.Name ~= "Basketball" and gun.Name ~= "Loader" and not seen[gun.Name] then
+                    seen[gun.Name] = true
+                    table.insert(otherItems, gun.Name)
+                end
+            end
+            table.sort(otherItems)
+        end
+        local catalog, ordered = {}, {}
+        for _, bucket in ipairs({
+            {label="EXOTIC", items=exoticItems},
+            {label="MAIN SHOP", items=mainShopItems},
+            {label="BAGS", items=bagItems},
+            {label="OTHER", items=otherItems},
+        }) do
+            for _, itemName in ipairs(bucket.items) do
+                if not catalog[itemName] then
+                    catalog[itemName] = bucket.label
+                    table.insert(ordered, itemName)
+                end
+            end
+        end
+        table.sort(ordered)
+        return catalog, ordered
+    end
+
+    local function qbDoBuy(itemName, category)
+        if not itemName or itemName == "(no matches)" then return false, "No item selected" end
+        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
+        if not hrp then return false, "No HumanoidRootPart" end
+        if category == "OTHER" or category == "BAGS" then
+            local itemObject = workspace:FindFirstChild("GUNS") and workspace.GUNS:FindFirstChild(itemName) or nil
+            if not itemObject and category == "BAGS" then itemObject = workspace:FindFirstChild(itemName) end
+            if not itemObject then return false, "World item not found" end
+            local prompt = qbFindPrompt(itemObject)
+            local targetCF = getObjectCFrame(prompt and prompt.Parent or itemObject)
+            if not prompt or not targetCF then return false, "Prompt not found" end
+            local originalCF = hrp.CFrame
+            local holdDuration = prompt.HoldDuration
+            pcall(function()
+                Config:Teleport(targetCF)
+                task.wait(0.35)
+                prompt.HoldDuration = 0
+                fireproximityprompt(prompt)
+                task.wait(0.2)
+                prompt.HoldDuration = holdDuration
+                Config:Teleport(originalCF)
+            end)
+            return true
+        elseif category == "EXOTIC" then
+            ReplicatedStorage:WaitForChild("ExoticShopRemote"):InvokeServer(itemName)
+            return true
+        elseif category == "MAIN SHOP" then
+            ReplicatedStorage:WaitForChild("ShopRemote"):InvokeServer(itemName)
+            return true
+        end
+        return false, "Unknown category"
+    end
+
+    local QuickBuyGroup = Tabs.Player:AddRightGroupbox("Quick Buy")
+    local selectedQuickBuyCategory, selectedQuickBuyItem, quickBuySearch = "ALL", nil, ""
+    local quickBuyCatalog, quickBuyOrdered = buildQuickBuyCatalog()
+    local quickBuyDropdown = QuickBuyGroup:AddDropdown("MiamiQuickBuyItemDropdown", {
+        Text = "Select Item",
+        Values = {"(no matches)"},
+        Default = "(no matches)",
+        Callback = function(v) selectedQuickBuyItem = normalizeDropdownValue(v) end,
+    })
+
+    local function refreshQuickBuyList()
+        quickBuyCatalog, quickBuyOrdered = buildQuickBuyCatalog()
+        local values, query = {}, string.lower(quickBuySearch or "")
+        for _, itemName in ipairs(quickBuyOrdered) do
+            local category = quickBuyCatalog[itemName]
+            local categoryMatch = (selectedQuickBuyCategory == "ALL") or (category == selectedQuickBuyCategory)
+            local searchMatch = (query == "") or (string.find(string.lower(itemName), query, 1, true) ~= nil)
+            if categoryMatch and searchMatch then table.insert(values, itemName) end
+        end
+        if #values == 0 then values = {"(no matches)"} end
+        selectedQuickBuyItem = values[1]
+        pcall(function() quickBuyDropdown:SetValues(values) end)
+    end
+
+    QuickBuyGroup:AddLabel("Search any quick-buy item, then buy it.")
+    QuickBuyGroup:AddDropdown("MiamiQuickBuyCategoryDropdown", {
+        Text = "Category",
+        Values = {"ALL", "EXOTIC", "MAIN SHOP", "BAGS", "OTHER"},
+        Default = "ALL",
+        Callback = function(v)
+            selectedQuickBuyCategory = normalizeDropdownValue(v)
+            refreshQuickBuyList()
+        end,
+    })
+    QuickBuyGroup:AddInput("MiamiQuickBuySearchInput", {
+        Text = "Search Item",
+        Default = "",
+        Placeholder = "Search...",
+        Numeric = false,
+        Finished = false,
+        Callback = function(v)
+            quickBuySearch = tostring(v or "")
+            refreshQuickBuyList()
+        end,
+    })
+    QuickBuyGroup:AddButton("Refresh Quick Buy", function()
+        refreshQuickBuyList()
+        sendNotification("Quick Buy", "Refreshed item list")
+    end)
+    QuickBuyGroup:AddButton("Buy Selected Item", function()
+        local itemName = selectedQuickBuyItem
+        local category = itemName and quickBuyCatalog[itemName]
+        if not itemName or itemName == "(no matches)" or not category then
+            sendNotification("Quick Buy", "Select a valid item first")
+            return
+        end
+        task.spawn(function()
+            local ok, err = pcall(qbDoBuy, itemName, category)
+            if ok then sendNotification("Quick Buy", "Bought: " .. tostring(itemName))
+            else sendNotification("Quick Buy", tostring(err or "Failed to buy item")) end
+        end)
+    end)
+    refreshQuickBuyList()
+
+    local hiddenUiBlacklist = {
+        ["Dead"] = true, ["Settings1"] = true, ["Controls"] = true, ["FirstShopGUI"] = true,
+        ["Freecam"] = true, ["ThaShop2"] = true, ["WATCH GUI"] = true, ["NYPD Cars"] = true,
+        ["CONSTRUCTION LEVEL"] = true, ["RobPlayerUI"] = true, ["Bronx LOCKER"] = true,
+        ["MobileBeam"] = true, ["Settings"] = true, ["Flash"] = true, ["Enter"] = true,
+        ["CopSirens"] = true,
+    }
+
+    local function getHiddenUiNames()
+        local names = {"ATM GUI"}
+        if LocalPlayer:FindFirstChild("PlayerGui") then
+            for _, gui in ipairs(LocalPlayer.PlayerGui:GetChildren()) do
+                if gui:IsA("ScreenGui") and not gui.Enabled and not hiddenUiBlacklist[gui.Name] then
+                    table.insert(names, gui.Name)
+                end
+            end
+        end
+        table.sort(names, function(a, b)
+            if a == "ATM GUI" then return true end
+            if b == "ATM GUI" then return false end
+            return tostring(a):lower() < tostring(b):lower()
+        end)
+        return names
+    end
+
+    local function toggleHiddenInterface(selectedUIName, state)
+        if not selectedUIName or selectedUIName == "" then return end
+        if selectedUIName == "ATM GUI" then
+            local selectedUI = LocalPlayer.PlayerGui and LocalPlayer.PlayerGui:FindFirstChild("ATMGui")
+            if state then
+                if not selectedUI then
+                    local assets = Lighting:FindFirstChild("Assets")
+                    local guiFolder = assets and assets:FindFirstChild("GUI")
+                    local atmGui = guiFolder and guiFolder:FindFirstChild("ATMGui")
+                    if atmGui then atmGui:Clone().Parent = LocalPlayer.PlayerGui
+                    else sendNotification("UI", "ATM GUI asset not found") end
+                end
+            else
+                if selectedUI then selectedUI:Destroy() end
+            end
+        else
+            local selectedUI = LocalPlayer.PlayerGui and LocalPlayer.PlayerGui:FindFirstChild(selectedUIName)
+            if selectedUI and selectedUI:IsA("ScreenGui") then selectedUI.Enabled = state end
+        end
+    end
+
+    local UIUtilitiesGroup = Tabs.Player:AddRightGroupbox("User Interface Utilities")
+    local hiddenUiNames = getHiddenUiNames()
+    local selectedUIName = hiddenUiNames[1] or "ATM GUI"
+    local uiDropdown = UIUtilitiesGroup:AddDropdown("MiamiHiddenUISelect", {
+        Text = "Select Interface",
+        Values = hiddenUiNames,
+        Default = selectedUIName,
+        Callback = function(v) selectedUIName = normalizeDropdownValue(v) end,
+    })
+    UIUtilitiesGroup:AddLabel("Open hidden interfaces from your PlayerGui.")
+    UIUtilitiesGroup:AddButton("Refresh Interface List", function()
+        hiddenUiNames = getHiddenUiNames()
+        if #hiddenUiNames == 0 then hiddenUiNames = {"ATM GUI"} end
+        selectedUIName = hiddenUiNames[1]
+        pcall(function() uiDropdown:SetValues(hiddenUiNames) end)
+        sendNotification("UI", "Refreshed hidden interface list")
+    end)
+    UIUtilitiesGroup:AddButton("Open Selected Interface", function()
+        toggleHiddenInterface(selectedUIName, true)
+        sendNotification("UI", "Opened: " .. tostring(selectedUIName))
+    end)
+    UIUtilitiesGroup:AddButton("Close Selected Interface", function()
+        toggleHiddenInterface(selectedUIName, false)
+        sendNotification("UI", "Closed: " .. tostring(selectedUIName))
+    end)
+end)
+
 
 ------------------------------------------------------------
 --  MAIN TAB (Fully Restored & Matched to ddd.txt)
@@ -4294,6 +4526,16 @@ MenuGroup:AddButton("Unload UI", function()
 end)
 
 Library:OnUnload(function()
+    pcall(function()
+        local toggleGui = getgenv().MiamiMenuToggleGui
+        if toggleGui then toggleGui:Destroy() end
+        getgenv().MiamiMenuToggleGui = nil
+    end)
+    pcall(function()
+        if getgenv().MiamiHeadTagControl then
+            getgenv().MiamiHeadTagControl.Destroy()
+        end
+    end)
     print("Unloaded!")
 end)
 
@@ -4317,7 +4559,226 @@ MenuGroup:AddButton({
 local executorName = identifyexecutor and identifyexecutor() or "Unknown"
 MenuGroup:AddLabel("Executor: "..executorName, true)
 
+getgenv().MiamiHeadTagSettings = getgenv().MiamiHeadTagSettings or {
+    Enabled = true,
+    Text = "discord.gg/oregonscripts",
+    Rainbow = true,
+    Size = 16,
+    Height = 2.8,
+}
+
+getgenv().MiamiHeadTagGroup = Tabs.Settings:AddRightGroupbox("Head Tag")
+getgenv().MiamiHeadTagGroup:AddToggle("MiamiHeadTagEnabled", {
+    Text = "Enable Head Tag",
+    Default = getgenv().MiamiHeadTagSettings.Enabled,
+    Callback = function(v)
+        getgenv().MiamiHeadTagSettings.Enabled = v
+        if getgenv().MiamiHeadTagControl then
+            if v then getgenv().MiamiHeadTagControl.Refresh() else getgenv().MiamiHeadTagControl.Destroy() end
+        end
+    end
+})
+getgenv().MiamiHeadTagGroup:AddInput("MiamiHeadTagText", {
+    Text = "Tag Text",
+    Default = getgenv().MiamiHeadTagSettings.Text,
+    Placeholder = "Type what shows above your head",
+    Numeric = false,
+    Finished = true,
+    Callback = function(v)
+        getgenv().MiamiHeadTagSettings.Text = (tostring(v or "") ~= "" and tostring(v)) or "discord.gg/oregonscripts"
+        if getgenv().MiamiHeadTagControl and getgenv().MiamiHeadTagSettings.Enabled then
+            getgenv().MiamiHeadTagControl.Refresh()
+        end
+    end
+})
+getgenv().MiamiHeadTagGroup:AddToggle("MiamiHeadTagRainbow", {
+    Text = "Rainbow Text",
+    Default = getgenv().MiamiHeadTagSettings.Rainbow,
+    Callback = function(v)
+        getgenv().MiamiHeadTagSettings.Rainbow = v
+    end
+})
+getgenv().MiamiHeadTagGroup:AddSlider("MiamiHeadTagSize", {
+    Text = "Text Size",
+    Min = 10, Max = 24, Default = getgenv().MiamiHeadTagSettings.Size, Rounding = 0,
+    Callback = function(v)
+        getgenv().MiamiHeadTagSettings.Size = v
+    end
+})
+getgenv().MiamiHeadTagGroup:AddSlider("MiamiHeadTagHeight", {
+    Text = "Height",
+    Min = 2, Max = 6, Default = getgenv().MiamiHeadTagSettings.Height, Rounding = 1,
+    Callback = function(v)
+        getgenv().MiamiHeadTagSettings.Height = v
+    end
+})
+getgenv().MiamiHeadTagGroup:AddButton("Refresh Head Tag", function()
+    if getgenv().MiamiHeadTagControl then
+        getgenv().MiamiHeadTagControl.Refresh()
+    end
+end)
+
 Library.ToggleKeybind = Options.MenuKeybind
+
+task.defer(function()
+    pcall(function()
+        local oldGui = getgenv().MiamiMenuToggleGui
+        if oldGui then oldGui:Destroy() end
+        local parentGui = (gethui and gethui()) or CoreGui
+        local holder = Instance.new("ScreenGui")
+        holder.Name = "Miami_MenuToggle"
+        holder.ResetOnSpawn = false
+        holder.IgnoreGuiInset = true
+        holder.ZIndexBehavior = Enum.ZIndexBehavior.Global
+        holder.DisplayOrder = 99999
+        pcall(function() holder.Parent = parentGui end)
+        if not holder.Parent then holder.Parent = CoreGui end
+        getgenv().MiamiMenuToggleGui = holder
+
+        local toggleBtn = Instance.new("TextButton")
+        toggleBtn.Parent = holder
+        toggleBtn.AnchorPoint = Vector2.new(0, 0.5)
+        toggleBtn.Position = UDim2.new(0, 18, 0.5, 0)
+        toggleBtn.Size = UDim2.new(0, 58, 0, 58)
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+        toggleBtn.Text = ""
+        toggleBtn.AutoButtonColor = false
+        toggleBtn.ZIndex = 99999
+        toggleBtn.Active = true
+
+        Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 14)
+        local stroke = Instance.new("UIStroke", toggleBtn)
+        stroke.Color = Color3.fromRGB(255, 140, 0)
+        stroke.Thickness = 2
+
+        local icon = Instance.new("TextLabel", toggleBtn)
+        icon.BackgroundTransparency = 1
+        icon.AnchorPoint = Vector2.new(0.5, 0.5)
+        icon.Position = UDim2.new(0.5, 0, 0.5, -6)
+        icon.Size = UDim2.new(0, 30, 0, 30)
+        icon.Font = Enum.Font.GothamBlack
+        icon.Text = "M"
+        icon.TextSize = 22
+        icon.TextColor3 = Color3.fromRGB(255, 140, 0)
+        icon.ZIndex = 100000
+
+        local label = Instance.new("TextLabel", toggleBtn)
+        label.BackgroundTransparency = 1
+        label.Position = UDim2.new(0, 0, 1, -16)
+        label.Size = UDim2.new(1, 0, 0, 14)
+        label.Font = Enum.Font.GothamBold
+        label.Text = "MENU"
+        label.TextSize = 11
+        label.TextColor3 = Color3.fromRGB(255, 140, 0)
+        label.ZIndex = 100000
+
+        local dragging, dragInput, dragStart, startPos, dragMoved = false, nil, nil, nil, 0
+        local function doToggle()
+            if Library and Library.Toggle then Library.Toggle() end
+        end
+        local function update(input)
+            local delta = input.Position - dragStart
+            dragMoved = delta.Magnitude
+            toggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+
+        task.spawn(function()
+            while toggleBtn.Parent do
+                task.wait(0.1)
+                local isOpen = Window and Window.Holder and Window.Holder.Visible
+                pcall(function()
+                    TweenService:Create(stroke, TweenInfo.new(0.2), {
+                        Color = isOpen and Color3.fromRGB(255, 140, 0) or Color3.fromRGB(85, 85, 85),
+                        Thickness = isOpen and 2 or 1.5,
+                    }):Play()
+                end)
+                icon.TextColor3 = isOpen and Color3.fromRGB(255, 140, 0) or Color3.fromRGB(180, 180, 180)
+                label.TextColor3 = isOpen and Color3.fromRGB(255, 140, 0) or Color3.fromRGB(180, 180, 180)
+                label.Text = isOpen and "CLOSE" or "MENU"
+            end
+        end)
+
+        toggleBtn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = toggleBtn.Position
+                dragMoved = 0
+            end
+        end)
+        toggleBtn.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if input == dragInput and dragging then update(input) end
+        end)
+        toggleBtn.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+                if dragMoved < 8 then doToggle() end
+            end
+        end)
+    end)
+end)
+
+task.defer(function()
+    pcall(function()
+        local function destroyHeadTag(character)
+            local head = character and character:FindFirstChild("Head")
+            local tag = head and head:FindFirstChild("Miami_DiscordTag")
+            if tag then tag:Destroy() end
+        end
+        local function attachHeadTag(character)
+            local settings = getgenv().MiamiHeadTagSettings or {}
+            if not settings.Enabled then destroyHeadTag(character); return end
+            local head = character and character:WaitForChild("Head", 5)
+            if not head then return end
+            destroyHeadTag(character)
+            local billboard = Instance.new("BillboardGui")
+            billboard.Name = "Miami_DiscordTag"
+            billboard.Parent = head
+            billboard.Adornee = head
+            billboard.Size = UDim2.new(0, 240, 0, 34)
+            billboard.StudsOffset = Vector3.new(0, settings.Height or 2.8, 0)
+            billboard.AlwaysOnTop = true
+            billboard.MaxDistance = 10000
+            local label = Instance.new("TextLabel", billboard)
+            label.BackgroundTransparency = 1
+            label.Size = UDim2.fromScale(1, 1)
+            label.Font = Enum.Font.GothamBold
+            label.Text = tostring(settings.Text or "discord.gg/oregonscripts")
+            label.TextSize = tonumber(settings.Size) or 16
+            label.TextStrokeTransparency = 0.2
+            label.TextStrokeColor3 = Color3.new(0, 0, 0)
+            task.spawn(function()
+                local hue = 0
+                while label.Parent do
+                    local current = getgenv().MiamiHeadTagSettings or {}
+                    if current.Rainbow then
+                        hue = (hue + 0.008) % 1
+                        label.TextColor3 = Color3.fromHSV(hue, 1, 1)
+                    else
+                        label.TextColor3 = Color3.fromRGB(255, 140, 0)
+                    end
+                    label.Text = tostring(current.Text or "discord.gg/oregonscripts")
+                    label.TextSize = tonumber(current.Size) or 16
+                    billboard.StudsOffset = Vector3.new(0, current.Height or 2.8, 0)
+                    task.wait(0.1)
+                end
+            end)
+        end
+        getgenv().MiamiHeadTagControl = {
+            Refresh = function()
+                if LocalPlayer.Character then task.defer(attachHeadTag, LocalPlayer.Character) end
+            end,
+            Destroy = function()
+                if LocalPlayer.Character then destroyHeadTag(LocalPlayer.Character) end
+            end,
+        }
+        if LocalPlayer.Character then task.defer(attachHeadTag, LocalPlayer.Character) end
+        LocalPlayer.CharacterAdded:Connect(attachHeadTag)
+    end)
+end)
 
 -- ==========================================
 -- MIAMI THEME OVERRIDE
